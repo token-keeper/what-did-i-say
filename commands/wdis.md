@@ -4,6 +4,8 @@ argument-hint: "[N]"
 allowed-tools: Bash(node:*)
 ---
 
+<!-- 폴백 경로 — 보통은 UserPromptExpansion 훅이 먼저 처리해 여기까지 오지 않는다 -->
+
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/wdis.mjs" --list "$0" --session-id "${CLAUDE_SESSION_ID}"`
 
 위 실행 결과가 이 프롬프트에 이미 주입되어 있습니다.

@@ -49,6 +49,7 @@ token-keeper `plugins` 마켓플레이스 등록 후 제공 예정.
 | 직전 요청 조회 | `/wdis` (기본 1건) |
 | 최근 N건 조회 | `/wdis 3` |
 
+- **조회는 LLM 턴을 쓰지 않는다** — `UserPromptExpansion` 훅이 `/wdis`를 가로채 결과를 터미널에 즉시 표시하므로 컨텍스트도 소비하지 않는다.
 - N이 숫자가 아니거나 1 미만이면 1건으로, 100을 초과하면 100건으로 보정하고 사유를 한 줄 안내한다.
 - 다른 플러그인과 커맨드 이름이 겹치면 전체 이름 `/what-did-i-say:wdis`를 쓴다.
 - 조회 결과에 `/wdis` 자신은 포함되지 않는다.
@@ -70,10 +71,10 @@ token-keeper `plugins` 마켓플레이스 등록 후 제공 예정.
 ## 개발
 
 ```bash
-node --test          # 27/27 통과
+node --test          # 33/33 통과
 ```
 
 - `scripts/parser.mjs` — transcript jsonl을 끝에서부터 스캔해 사용자 요청만 골라낸다 (슬래시 커맨드 래퍼·hook 주입 컨텍스트·tool_result 제외).
-- `scripts/wdis.mjs` — 진입점. stdin JSON을 받는 hook 모드와 `--list N` 조회 모드로 분기하고, 시간 포맷과 출력을 담당한다.
+- `scripts/wdis.mjs` — 진입점. stdin JSON을 받는 Stop hook 모드, `/wdis`를 턴 0으로 처리하는 `--expand` 모드, 폴백 `--list N` 모드로 분기하고, 시간 포맷과 출력을 담당한다.
 
 설계 문서: [docs/PRD.md](docs/PRD.md) · [docs/TECH_SPEC.md](docs/TECH_SPEC.md) · [docs/PLAN.md](docs/PLAN.md)

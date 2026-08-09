@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { formatLine, parseLimit, relativeTime, resolveTranscript, runList, sessionDir } from './wdis.mjs';
+import { expandArgs, formatLine, parseLimit, relativeTime, resolveTranscript, runExpand, runList, sessionDir } from './wdis.mjs';
 
 const entry = fileURLToPath(new URL('./wdis.mjs', import.meta.url));
 const fixture = (name) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
@@ -127,6 +127,62 @@ test('세션 파일이 없거나 채택할 요청이 0건이면 안내 한 줄�
       '표시할 요청이 없습니다\n',
     );
   });
+});
+
+const expand = (payload) => run(['--expand'], typeof payload === 'string' ? payload : JSON.stringify(payload));
+
+test('--expand는 우리 커맨드를 block JSON으로 응답한다', () => {
+  for (const [label, payload] of [
+    ['단축 이름', { command_name: 'wdis', prompt: '3', transcript_path: fixture('self-command.jsonl') }],
+    ['namespace 전체 이름', { command_name: 'what-did-i-say:wdis', prompt: '3', transcript_path: fixture('self-command.jsonl') }],
+    ['prompt에 슬래시 포함', { command_name: 'wdis', prompt: '/wdis 3', transcript_path: fixture('self-command.jsonl') }],
+    ['command_name 없이 prompt만', { prompt: '/wdis 2', transcript_path: fixture('self-command.jsonl') }],
+  ]) {
+    const got = expand(payload);
+    assert.equal(got.status, 0, `${label}: exit 0이어야 한다`);
+    assert.equal(got.stderr, '', `${label}: stderr에 쓰지 않는다`);
+    const out = JSON.parse(got.stdout);
+    assert.equal(out.decision, 'block', label);
+    assert.match(out.reason, /\[1\] /, label);
+    assert.ok(!out.reason.endsWith('\n'), `${label}: reason 끝에 개행을 남기지 않는다`);
+  }
+});
+
+test('--expand는 우리 커맨드가 아니면 무출력 exit 0으로 통과시킨다', () => {
+  for (const [label, payload] of [
+    ['타 플러그인 커맨드', { command_name: 'cn:set', prompt: '2' }],
+    ['이름이 이어지는 커맨드', { command_name: 'wdis-help', prompt: '1' }],
+    ['command_name 없는 일반 프롬프트', { prompt: '안녕' }],
+    ['command_name 없이 타 커맨드', { prompt: '/cn:status' }],
+    ['슬래시 없는 wdis 토큰', { prompt: 'wdis 3' }],
+    ['빈 payload', {}],
+    ['손상된 stdin', '{not json'],
+    ['빈 stdin', ''],
+  ]) {
+    const got = expand(payload);
+    assert.equal(got.status, 0, `${label}: exit 0이어야 한다`);
+    assert.equal(got.stdout, '', `${label}: 출력이 없어야 한다`);
+    assert.equal(got.stderr, '', `${label}: stderr에 쓰지 않는다`);
+  }
+});
+
+test('--expand는 조회에 실패해도 안내 문구를 block으로 돌려준다', () => {
+  const got = expand({ command_name: 'wdis', prompt: '1', cwd: '/nonexistent-wdis-project' });
+  assert.equal(got.status, 0);
+  assert.match(JSON.parse(got.stdout).reason, /요청 기록을 찾지 못했습니다/);
+});
+
+test('--expand의 N은 command_args 우선, 없으면 prompt에서 읽고 상한 보정 안내를 붙인다', () => {
+  assert.equal(expandArgs({ command_name: 'wdis', command_args: '5', prompt: '/wdis 5' }), '5');
+  assert.equal(expandArgs({ command_name: 'wdis', prompt: '/wdis 5' }), '5', 'command_args가 없으면 prompt에서 뽑는다');
+  assert.equal(expandArgs({ command_name: 'wdis', prompt: '/wdis' }), '', '인자 없는 호출은 빈 문자열');
+  assert.equal(expandArgs({ command_name: 'cn:set', prompt: '2' }), null);
+
+  const reason = runExpand(
+    JSON.stringify({ command_name: 'wdis', command_args: '500', transcript_path: fixture('self-command.jsonl') }),
+    { now: new Date('2026-08-09T02:05:00.000Z') },
+  );
+  assert.match(reason, /100건으로 보정/);
 });
 
 // TECH_SPEC §8 케이스 16
