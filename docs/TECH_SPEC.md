@@ -124,7 +124,7 @@ export function normalizeText(raw)          // → string (공백 collapse + tri
 
 배열 content에서 텍스트를 얻을 때는 `type === "text"` 항목의 `text`만 이어붙인다.
 
-**list 모드 자기 제외** — `--list` 모드에서는 `/wdis` 커맨드 자신을 결과에서 제외한다. §4.3의 1번 규칙으로 환원한 결과가 `/wdis` 또는 `/what-did-i-say:wdis`로 시작하는 라인(인자 유무 무관)은 건너뛰고, **부족한 건수만큼 더 과거로 역스캔을 이어간다**. hook 모드에는 적용하지 않는다.
+**list 모드 자기 제외** — `--list` 모드에서는 `/wdis` 커맨드 자신을 결과에서 제외한다. §4.3의 1번 규칙으로 환원한 결과의 **커맨드 토큰이 정확히 `/wdis` 또는 `/what-did-i-say:wdis`인 경우**(커맨드명 뒤가 문자열 끝이거나 공백일 때)만 건너뛰고, **부족한 건수만큼 더 과거로 역스캔을 이어간다**. `/wdis-help`처럼 이름이 이어지는 다른 커맨드는 제외 대상이 아니다. hook 모드에는 적용하지 않는다.
 
 ### 4.3 텍스트 정규화
 
@@ -274,8 +274,9 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 | 11 | `limit` 초과값 clamp | `--list 500` → 100건으로 보정하고 보정 안내 1줄 포함 |
 | 12 | `maxBytes` 도달 | 예외 없이 그때까지 수집한 분량만 반환 |
 | 13 | list 모드 자기 제외 | 최신 라인이 `/wdis 3`이면 건너뛰고 그 이전 요청부터 채운다 |
-| 14 | 빈 파일 | 빈 배열 |
-| 15 | hook 모드 stdout | `JSON.parse(stdout)`가 성공하고, `systemMessage`가 `🗣 `로 시작하며 `\n`·`\r`을 포함하지 않는다 |
+| 14 | 자기 제외 경계(음성) | `/wdis-help 1`은 제외하지 **않고** 그대로 채택한다 |
+| 15 | 빈 파일 | 빈 배열 |
+| 16 | hook 모드 stdout | `JSON.parse(stdout)`가 성공하고, `systemMessage`가 `🗣 `로 시작하며 `\n`·`\r`을 포함하지 않는다 |
 
 멀티바이트 경계 회귀를 막기 위해 10번 케이스는 `chunkSize`를 작게(예: 64) 주입해 한글 라인이 여러 청크에
 걸치도록 만든다.
@@ -291,8 +292,8 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 
 > 2026-08-09 조사 기록(비규범) — 2단계 착수 시 재실측 후 확정한다.
 
-Codex는 `~/.codex/config.toml`의 `notify`가 단일 슬롯이며 oh-my-codex가 점유 중이므로 이 경로를 쓰지 않는다.
-대신 `~/.codex/hooks.json`의 Stop 엔트리로 등록한다. Codex의 Stop hook stdin 계약이 Claude Code와 호환되므로
-`wdis.mjs`의 진입점·필터·출력은 그대로 재사용하고, 원천이 `rollout-*.jsonl`로 다르다는 점만 흡수하면 된다.
-구체적으로는 `parser.mjs`에 rollout 라인용 `extractRequest` 변형 하나를 추가하고, 파일명 패턴으로 어느 추출기를
-쓸지 고르는 분기 한 줄을 두는 수준이다. 2단계 착수 시 rollout 포맷 실측을 먼저 수행한다.
+조사 시점 관찰: Codex는 `~/.codex/config.toml`의 `notify`가 단일 슬롯이며 oh-my-codex가 점유 중이었고,
+notify 경로는 하위 프로세스 stdout이 폐기되어 재표시 요건을 충족하지 못했다. 유력안은 `~/.codex/hooks.json`의
+Stop 엔트리 등록이다 — 조사 당시 Stop stdin 계약이 Claude Code와 유사해 `wdis.mjs`의 상당 부분을 재사용하고
+`rollout-*.jsonl`용 추출기를 추가하는 방향이 가능해 보였다. 다만 이는 구현 계약이 아니라 관찰 기록이며,
+stdin 계약·재사용 범위·변경량은 2단계 착수 시 rollout 포맷과 함께 재실측한 뒤 별도 TECH_SPEC으로 확정한다.
