@@ -136,6 +136,7 @@ export function normalizeText(raw)          // → string (공백 collapse + tri
 | 2 | `<local-command-stdout>` | 해당 라인은 제외한다 |
 | 3 | `<local-command-caveat>` | 슬래시 커맨드 실행에 딸려오는 안내 문구이므로 제외한다 |
 | 4 | `<system-reminder>` 등 주입 컨텍스트 | 태그 블록을 제거한다. 제거 후 남은 사용자 텍스트가 있으면 그 텍스트만 채택하고, 남는 것이 없으면 제외한다 |
+| 4b | `<teammate-message>`·`<task-notification>`·`<cross-session-message>` 포함 라인 | 시스템·타 에이전트가 주입한 user 턴이므로 **라인 전체 제외** — 실측상 `isMeta` 마커가 없어 텍스트 패턴으로만 걸러진다 |
 | 5 | 공백 정규화 | CRLF/LF를 포함한 **연속 공백을 단일 공백으로 collapse** 한 뒤 앞뒤 공백을 제거한다 (`raw.replace(/\s+/g, ' ').trim()`). 첫 줄만 취하지 않고 전체를 한 줄로 접는다 |
 | 6 | 길이 제한 | **Unicode code point 기준 최대 80** — `Array.from(text).length > 80`이면 앞 **79 code points + `…`** 로 절단한다(결과 80 code points). `Array.from`을 쓰므로 이모지 등의 surrogate pair가 반으로 갈리지 않는다 |
 
@@ -255,8 +256,8 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 
 ## 8. 테스트 전략
 
-`node --test scripts/` 로 실행하며, 픽스처는 실제 jsonl 라인을 축소한 `scripts/fixtures/*.jsonl`을 쓴다.
-**완료 게이트는 `node --test scripts/` 전체 통과 하나뿐이다.** 커버리지(`node --test --experimental-test-coverage`,
+`node --test` 로 실행하며, 픽스처는 실제 jsonl 라인을 축소한 `scripts/fixtures/*.jsonl`을 쓴다.
+**완료 게이트는 `node --test` 전체 통과 하나뿐이다.** 커버리지(`node --test --experimental-test-coverage`,
 70% 이상)는 게이트가 아니라 참고 목표로만 측정한다.
 
 | # | 케이스 | 기대 |
@@ -277,6 +278,9 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 | 14 | 자기 제외 경계(음성) | `/wdis-help 1`은 제외하지 **않고** 그대로 채택한다 |
 | 15 | 빈 파일 | 빈 배열 |
 | 16 | hook 모드 stdout | `JSON.parse(stdout)`가 성공하고, `systemMessage`가 `🗣 `로 시작하며 `\n`·`\r`을 포함하지 않는다 |
+| 17 | 주입 턴(§4.3-4b) | `<teammate-message>`·`<task-notification>`·`<cross-session-message>` 포함 라인 제외 |
+| 18 | 커맨드 출력 래퍼(§4.3-2·3) | `<local-command-stdout>`·`<local-command-caveat>` 라인 제외 |
+| 19 | 빈 content | 빈 문자열·공백만 있는 content는 제외 |
 
 멀티바이트 경계 회귀를 막기 위해 10번 케이스는 `chunkSize`를 작게(예: 64) 주입해 한글 라인이 여러 청크에
 걸치도록 만든다.
