@@ -2,7 +2,7 @@
 // 시간 표시·이모지·터미널 출력은 이 모듈의 관심사가 아니다.
 import fs from 'node:fs';
 
-export const MAX_LIMIT = 100; // /wdis N 상한
+export const MAX_LIMIT = 10; // /wdis N 상한
 export const MAX_SCAN_BYTES = 10 * 1024 * 1024; // 총 스캔 바이트 상한 (10MiB)
 
 const MAX_CODE_POINTS = 80;

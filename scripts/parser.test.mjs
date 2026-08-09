@@ -12,7 +12,7 @@ const userLine = (content, extra = {}) =>
   JSON.stringify({ type: 'user', message: { role: 'user', content }, timestamp: '2026-08-09T00:42:19.745Z', isSidechain: false, ...extra });
 
 test('상수는 스펙값이다', () => {
-  assert.equal(MAX_LIMIT, 100);
+  assert.equal(MAX_LIMIT, 10);
   assert.equal(MAX_SCAN_BYTES, 10 * 1024 * 1024);
 });
 

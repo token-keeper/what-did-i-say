@@ -1,5 +1,5 @@
 ---
-description: 최근 요청한 내용을 시각과 함께 최대 N건 표시합니다 (기본 1건, 최대 100건)
+description: 최근 요청한 내용을 시각과 함께 최대 N건 표시합니다 (기본 1건, 최대 10건)
 argument-hint: "[N]"
 allowed-tools: Bash(node:*)
 ---

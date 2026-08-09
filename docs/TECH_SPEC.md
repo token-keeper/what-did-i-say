@@ -102,7 +102,7 @@ Stop hook 모드는 `transcript_path`를 받으므로 탐색이 필요 없다. e
 
 ```js
 // parser.mjs
-export const MAX_LIMIT = 100;                 // /wdis N 상한
+export const MAX_LIMIT = 10;                  // /wdis N 상한
 export const MAX_SCAN_BYTES = 10 * 1024 * 1024; // 총 스캔 바이트 상한 (10MiB)
 
 export function collectRecent(filePath, limit, { chunkSize = 65536, maxBytes = MAX_SCAN_BYTES } = {})
@@ -113,7 +113,7 @@ export function normalizeText(raw)          // → string (공백 collapse + tri
 
 절차:
 
-1. `fs.openSync` + `fstatSync`로 파일 크기를 구한다. `limit`은 호출 전에 **1~`MAX_LIMIT`(100)** 으로 보정한다.
+1. `fs.openSync` + `fstatSync`로 파일 크기를 구한다. `limit`은 호출 전에 **1~`MAX_LIMIT`(10)** 으로 보정한다.
 2. 파일 끝에서 `chunkSize` 바이트씩 앞으로 이동하며 읽고, 읽은 Buffer를 **앞쪽에 이어붙인다**.
 3. **Buffer를 모두 이어붙인 뒤에 `toString('utf8')`을 호출한다** — 청크 경계에서 한글 등 멀티바이트 문자가 잘리는 문제를 피한다.
 4. 개행으로 분리해 뒤에서부터 `extractRequest`에 넘긴다. 첫 조각(파일 앞쪽으로 이어지는 불완전 라인)은 다음 청크와 결합할 때까지 보류한다.
@@ -249,7 +249,7 @@ Claude Code가 플러그인 설치 경로로 치환한다.
 
 ```markdown
 ---
-description: 최근 요청한 내용을 시각과 함께 최대 N건 표시합니다 (기본 1건, 최대 100건)
+description: 최근 요청한 내용을 시각과 함께 최대 N건 표시합니다 (기본 1건, 최대 10건)
 argument-hint: "[N]"
 allowed-tools: Bash(node:*)
 ---
@@ -299,7 +299,7 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 | 8 | 다중 줄 입력 | `"첫 줄\r\n\n  둘째 줄\t셋째 "` → 정확히 `"첫 줄 둘째 줄 셋째"` (개행 없음) |
 | 9 | 최신 라인의 `timestamp` 누락·파싱 불가 | 그 라인은 skip하고 **직전 정상 요청**으로 fallback |
 | 10 | 역방향 스캔 N건 중단 | 픽스처가 20건이어도 `limit=3`이면 3건, 시간 오름차순 |
-| 11 | `limit` 초과값 clamp | `--list 500` → 100건으로 보정하고 보정 안내 1줄 포함 |
+| 11 | `limit` 초과값 clamp | `--list 500` → 10건으로 보정하고 보정 안내 1줄 포함 |
 | 12 | `maxBytes` 도달 | 예외 없이 그때까지 수집한 분량만 반환 |
 | 13 | list 모드 자기 제외 | 최신 라인이 `/wdis 3`이면 건너뛰고 그 이전 요청부터 채운다 |
 | 14 | 자기 제외 경계(음성) | `/wdis-help 1`은 제외하지 **않고** 그대로 채택한다 |
@@ -317,7 +317,7 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 1. **같은 프로젝트 병렬 세션 — mtime fallback 경로에서만 해당.** list 모드는 `${CLAUDE_SESSION_ID}`(또는 env)로 현재 세션 파일을 정확히 지정하므로 병렬 세션에서도 정상 동작한다. 다만 두 값이 모두 없어 §2.3-3의 mtime fallback으로 내려간 경우에는, 동일 cwd의 다른 세션 요청을 표시할 수 있다. hook 모드는 `transcript_path`를 받으므로 해당하지 않는다.
 2. **jsonl 스키마 의존** — Claude Code 내부 포맷이므로 상위 버전에서 필드명이 바뀔 수 있다. 파싱 실패는 조용한 무출력으로 흡수되어 사용자에게 오류로 보이지 않는다.
 3. **표시 위치** — Stop hook이 반환한 `systemMessage`를 Claude Code가 턴 종료 직후 표시한다. statusline이나 별도 창을 쓰지 않으며, 표시 형식(호스트 prefix 포함 여부)은 호스트가 결정한다.
-4. **스캔 상한** — 무상태 원칙을 유지하면서 대용량 jsonl에서 비용이 폭주하지 않도록 두 개의 상한을 둔다. `N` 상한은 **100**이며 초과 입력은 100으로 보정하고 한 줄 안내한다. 총 스캔 바이트 상한은 **10MiB**이며, 도달하면 그때까지 수집한 분량만 반환한다 — 세션 초반 요청까지 거슬러 올라가지 못할 수 있다.
+4. **스캔 상한** — 무상태 원칙을 유지하면서 대용량 jsonl에서 비용이 폭주하지 않도록 두 개의 상한을 둔다. `N` 상한은 **10**이며 초과 입력은 10으로 보정하고 한 줄 안내한다. 총 스캔 바이트 상한은 **10MiB**이며, 도달하면 그때까지 수집한 분량만 반환한다 — 세션 초반 요청까지 거슬러 올라가지 못할 수 있다.
 
 ## 10. 2단계 — Codex 지원
 

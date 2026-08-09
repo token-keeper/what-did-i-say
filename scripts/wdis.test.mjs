@@ -41,7 +41,7 @@ test('같은 날은 HH:MM, 다른 날은 MM-DD HH:MM 접두를 붙인다', () =>
   assert.equal(formatLine(row, nextDay), `${stamp} (15시간 전) | 파서 필터 규칙 정리해줘`);
 });
 
-test('N은 1 미만·비숫자면 1건, 100 초과면 100건으로 보정하고 사유를 안내한다', () => {
+test('N은 1 미만·비숫자면 1건, 상한 초과면 10건으로 보정하고 사유를 안내한다', () => {
   assert.equal(parseLimit(undefined), 1, '인자 생략은 기본값');
   assert.equal(parseLimit(''), 1);
   assert.deepEqual([parseLimit(''), []].slice(1), [[]], '기본값에는 안내를 붙이지 않는다');
@@ -55,8 +55,8 @@ test('N은 1 미만·비숫자면 1건, 100 초과면 100건으로 보정하고 
   assert.match(bad[0], /읽지 못해/);
 
   const over = [];
-  assert.equal(parseLimit('500', over), 100);
-  assert.match(over[0], /100건으로 보정/);
+  assert.equal(parseLimit('500', over), 10);
+  assert.match(over[0], /10건으로 보정/);
 
   assert.equal(parseLimit('3'), 3);
 });
@@ -166,10 +166,41 @@ test('--expand는 우리 커맨드가 아니면 무출력 exit 0으로 통과시
   }
 });
 
-test('--expand는 조회에 실패해도 안내 문구를 block으로 돌려준다', () => {
+test('--expand는 조회에 실패해도 안내 문구를 block으로 돌려주고, 보정 안내도 유지한다', () => {
   const got = expand({ command_name: 'wdis', prompt: '1', cwd: '/nonexistent-wdis-project' });
   assert.equal(got.status, 0);
   assert.match(JSON.parse(got.stdout).reason, /요청 기록을 찾지 못했습니다/);
+
+  const overEmpty = expand({ command_name: 'wdis', prompt: '500', cwd: '/nonexistent-wdis-project' });
+  const reason = JSON.parse(overEmpty.stdout).reason;
+  assert.match(reason, /10건으로 보정/, '조회 실패 시에도 상한 보정 안내는 소실되지 않는다');
+  assert.match(reason, /요청 기록을 찾지 못했습니다/);
+});
+
+test('--expand는 transcript_path가 실존하지 않으면 세션 디렉터리 fallback으로 내려간다', () => {
+  const cwd = '/Users/mini/Github/ai-tools/what-did-i-say';
+  withSession(cwd, 'fb-session', 'basic.jsonl', (home) => {
+    const reason = runExpand(
+      JSON.stringify({ command_name: 'wdis', prompt: '1', transcript_path: '/nonexistent', session_id: 'fb-session', cwd }),
+      { now: new Date('2026-08-09T02:05:00.000Z'), env: {}, home },
+    );
+    assert.match(reason, /^\[1\] /, '부재 transcript_path 대신 session_id로 찾는다');
+  });
+});
+
+test('--expand는 command_name이 비문자열·빈 문자열이어도 안전하게 라우팅한다', () => {
+  assert.equal(expandArgs({ command_name: '', prompt: '/wdis 2' }), '2', '빈 문자열은 이름 없음으로 보고 prompt로 판정');
+  assert.equal(expandArgs({ command_name: 123, prompt: '안녕' }), null, '비문자열 이름 + 일반 prompt는 통과');
+  assert.equal(expandArgs({ command_name: null, prompt: '/cn:status' }), null);
+});
+
+test('--expand 결과에도 /wdis 자신은 포함되지 않는다', () => {
+  const reason = runExpand(
+    JSON.stringify({ command_name: 'wdis', prompt: '9', transcript_path: fixture('self-command.jsonl') }),
+    { now: new Date('2026-08-09T02:05:00.000Z') },
+  );
+  assert.ok(!/\| \/wdis(?:\s|$)/m.test(reason), '/wdis 자기 라인이 목록에 없다');
+  assert.match(reason, /\| \/wdis-help 1/, '이름이 이어지는 커맨드는 남는다');
 });
 
 test('--expand의 N은 command_args 우선, 없으면 prompt에서 읽고 상한 보정 안내를 붙인다', () => {
@@ -182,7 +213,7 @@ test('--expand의 N은 command_args 우선, 없으면 prompt에서 읽고 상한
     JSON.stringify({ command_name: 'wdis', command_args: '500', transcript_path: fixture('self-command.jsonl') }),
     { now: new Date('2026-08-09T02:05:00.000Z') },
   );
-  assert.match(reason, /100건으로 보정/);
+  assert.match(reason, /10건으로 보정/);
 });
 
 // TECH_SPEC §8 케이스 16

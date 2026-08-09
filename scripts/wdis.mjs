@@ -83,11 +83,11 @@ function argValue(argv, name) {
   return value === undefined || value.startsWith('--') ? undefined : value;
 }
 
-/** 목록 본문(개행 포함)을 만든다. 조회 실패는 안내 한 줄로 대신한다. */
+/** 목록 본문(개행 포함)을 만든다. 조회 실패는 안내 한 줄로 대신하되 보정 안내(notes)는 유지한다. */
 function renderList(file, limit, notes, now) {
-  if (!file) return `${NO_SESSION}\n`;
+  if (!file) return [...notes, NO_SESSION].join('\n') + '\n';
   const rows = collectRecent(file, limit, { excludeSelf: true });
-  if (rows.length === 0) return `${NO_REQUEST}\n`;
+  if (rows.length === 0) return [...notes, NO_REQUEST].join('\n') + '\n';
   // rows는 오름차순, [1]이 가장 최근이므로 뒤에서부터 번호를 매긴다
   const lines = rows.map((row, i) => `[${rows.length - i}] ${formatLine(row, now)}`);
   return [...notes, ...lines].join('\n') + '\n';
