@@ -48,6 +48,19 @@ test('teammate-message·task-notification·cross-session 주입 턴은 제외한
   assert.equal(extractRequest(userLine('<cross-session-message from="worker">check tests</cross-session-message>')), null);
 });
 
+// 19
+test('빈 문자열·공백만 있는 content는 제외한다', () => {
+  assert.equal(extractRequest(userLine('')), null);
+  assert.equal(extractRequest(userLine('   \n\t ')), null);
+});
+
+// 보안 — 제어문자(ANSI escape 등)는 표시 텍스트에 남지 않는다
+test('제어문자는 공백으로 치환되어 살아남지 않는다', () => {
+  const got = extractRequest(userLine('빨간\x1b[31m글씨\x07경고'));
+  assert.equal(got.text, '빨간 [31m글씨 경고');
+  assert.ok(!/[\x00-\x1f\x7f]/.test(got.text));
+});
+
 // 4
 test('isSidechain: true 는 제외한다', () => {
   assert.equal(extractRequest(userLine('서브에이전트 내부 프롬프트', { isSidechain: true })), null);

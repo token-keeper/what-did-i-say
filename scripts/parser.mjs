@@ -29,6 +29,8 @@ export function normalizeText(raw) {
     text = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '');
   }
 
+  // ANSI escape 등 제어문자가 systemMessage로 살아나가 터미널을 오염시키지 않게 지운다
+  text = text.replace(/[\x00-\x1f\x7f]/g, ' ');
   text = text.replace(/\s+/g, ' ').trim();
 
   const points = Array.from(text);
@@ -77,8 +79,10 @@ export function collectRecent(filePath, limit, { chunkSize = 65536, maxBytes = M
   try {
     let pos = fs.fstatSync(fd).size;
     let scanned = 0;
-    // 아직 라인으로 완성되지 않은 앞쪽 바이트. 이어붙인 뒤에만 디코딩해 멀티바이트 경계를 지킨다.
-    let pending = Buffer.alloc(0);
+    // 아직 라인으로 완성되지 않은 조각들(파일 순서). 결합·디코딩은 개행을 찾은 시점에만 해
+    // 매 반복 전체 복사(O(n²))를 피하고 멀티바이트 경계도 지킨다. 개행(0x0a)은 UTF-8
+    // 연속 바이트로 나올 수 없어 조각 단위 탐색이 안전하다.
+    let pendingParts = [];
 
     while (pos > 0 && found.length < max && scanned < maxBytes) {
       const size = Math.min(chunkSize, pos, maxBytes - scanned);
@@ -86,16 +90,19 @@ export function collectRecent(filePath, limit, { chunkSize = 65536, maxBytes = M
       pos -= size;
       fs.readSync(fd, chunk, 0, size, pos);
       scanned += size;
-      pending = Buffer.concat([chunk, pending]);
 
-      const newline = pending.indexOf(NEWLINE);
-      if (newline < 0) continue; // 라인 하나가 청크보다 길다 — 더 읽는다
-      takeLines(pending.subarray(newline + 1).toString('utf8'), found, max, excludeSelf);
-      pending = pending.subarray(0, newline);
+      const newline = chunk.indexOf(NEWLINE);
+      if (newline < 0) {
+        pendingParts.unshift(chunk); // 라인 하나가 청크보다 길다 — 더 읽는다
+        continue;
+      }
+      const complete = Buffer.concat([chunk.subarray(newline + 1), ...pendingParts]);
+      takeLines(complete.toString('utf8'), found, max, excludeSelf);
+      pendingParts = [chunk.subarray(0, newline)];
     }
     // 파일 시작까지 읽었을 때만 남은 조각이 완전한 라인이다
     if (pos === 0 && found.length < max) {
-      takeLines(pending.toString('utf8'), found, max, excludeSelf);
+      takeLines(Buffer.concat(pendingParts).toString('utf8'), found, max, excludeSelf);
     }
   } finally {
     fs.closeSync(fd);

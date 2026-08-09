@@ -108,6 +108,7 @@ function main(argv) {
   if (!argv.includes('--list')) {
     // §7 — 예외를 삼키는 지점은 여기 한 곳뿐이다. 무엇이 실패하든 무출력 exit 0.
     try {
+      // hook 실행 시 stdin은 항상 파이프된다. stdin 없이 단독 실행하면 여기서 블록될 수 있다.
       process.stdout.write(runHook(fs.readFileSync(0, 'utf8')));
     } catch {
       /* 턴 완료를 방해하지 않는다 */
@@ -117,7 +118,11 @@ function main(argv) {
   try {
     process.stdout.write(runList(argv));
   } catch {
-    process.stdout.write(`${UNREADABLE}\n`);
+    try {
+      process.stdout.write(`${UNREADABLE}\n`);
+    } catch {
+      /* stdout이 이미 죽었어도(EPIPE) exit 0 계약을 지킨다 */
+    }
   }
 }
 

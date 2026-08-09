@@ -278,6 +278,9 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 | 14 | 자기 제외 경계(음성) | `/wdis-help 1`은 제외하지 **않고** 그대로 채택한다 |
 | 15 | 빈 파일 | 빈 배열 |
 | 16 | hook 모드 stdout | `JSON.parse(stdout)`가 성공하고, `systemMessage`가 `🗣 `로 시작하며 `\n`·`\r`을 포함하지 않는다 |
+| 17 | 주입 턴(§4.3-4b) | `<teammate-message>`·`<task-notification>`·`<cross-session-message>` 포함 라인 제외 |
+| 18 | 커맨드 출력 래퍼(§4.3-2·3) | `<local-command-stdout>`·`<local-command-caveat>` 라인 제외 |
+| 19 | 빈 content | 빈 문자열·공백만 있는 content는 제외 |
 
 멀티바이트 경계 회귀를 막기 위해 10번 케이스는 `chunkSize`를 작게(예: 64) 주입해 한글 라인이 여러 청크에
 걸치도록 만든다.
