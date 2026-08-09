@@ -37,13 +37,13 @@ Claude Code 턴 종료 시(Stop hook) "방금 사용자 요청 + 요청 시간"�
 - 순서: fixtures → 테스트 → 구현 (TDD, Red→Green→Refactor)
 - 필터 대상 케이스는 fixtures로 고정한다: 순수 사용자 프롬프트 / 슬래시 커맨드 래퍼(`<command-name>`, `<local-command-stdout>`) / hook 주입 컨텍스트 / `tool_result` / 빈 content.
 - 엣지 케이스: 파일 없음, 빈 파일, 손상된 JSON 라인, **`timestamp` 누락·파싱 불가 라인(그 라인만 skip하고 직전 정상 요청으로 fallback)**, 사용자 프롬프트가 0건, 요청 N이 실제 건수보다 큰 경우, **N이 상한 100을 초과하는 경우(100으로 보정)**, **스캔 바이트가 10MiB 상한에 도달하는 경우**.
-- 완료 기준: `node --test scripts/` **전체 통과** (통과 수를 "N/N 통과"로 보고). 커버리지는 참고 목표일 뿐 게이트가 아니다. 이 커밋 시점에는 아직 hook에 연결하지 않으므로 실 세션 동작 변화가 없다.
+- 완료 기준: `node --test` **전체 통과** (통과 수를 "N/N 통과"로 보고). 커버리지는 참고 목표일 뿐 게이트가 아니다. 이 커밋 시점에는 아직 hook에 연결하지 않으므로 실 세션 동작 변화가 없다.
 
 ### 커밋 3 — `feat: Stop hook 출력`
 
 - 산출: `scripts/wdis.mjs`(hook 모드 — stdin JSON에서 `transcript_path` 수신 → parser 호출 → `{"systemMessage":"..."}` JSON 1개 출력), `hooks/hooks.json`에 Stop 엔트리 추가
 - 완료 기준:
-  1. `node --test scripts/` 통과 유지
+  1. `node --test` 통과 유지
   2. 수동 E2E: `claude --plugin-dir <repo>` 로 새 세션 기동 → 아무 프롬프트나 1회 입력 → 턴 종료 시 요청문+시간 한 줄이 사용자에게 표시됨
   3. **`systemMessage` 렌더 실측** — 실제 화면에 어떻게 표시되는지, 호스트가 prefix(`Stop says:` 등)를 덧붙이는지 육안 확인하고 그 결과로 최종 출력 포맷을 확정한다. 확정 결과를 커밋 3 메시지에 기록한다
   4. 실패 안전: 손상된 transcript_path를 넘겨도 hook이 exit 0으로 종료하고 세션을 방해하지 않음 (`echo '{"transcript_path":"/nonexistent"}' | node scripts/wdis.mjs` → 종료 코드 0, 출력 없음)
@@ -54,7 +54,7 @@ Claude Code 턴 종료 시(Stop hook) "방금 사용자 요청 + 요청 시간"�
 - 산출: `commands/wdis.md`(`allowed-tools` 제한 + `` !`...` `` dynamic context injection 구조), `scripts/wdis.mjs`에 `--list N` 모드 추가
 - 인자 규칙: **커맨드 인자의 첫 번째는 `$0`** 이다(`$1` 아님). `/wdis` = 기본 1건, `/wdis N` = 최근 N건. N이 숫자가 아니거나 0 이하면 기본값으로 처리하고 사유를 한 줄 안내하며, **100을 초과하면 100으로 보정**하고 보정 사실을 한 줄 안내한다. 세션 지정은 `--session-id "${CLAUDE_SESSION_ID}"`로 전달한다.
 - 완료 기준:
-  1. `node --test scripts/` 통과 유지
+  1. `node --test` 통과 유지
   2. 수동 E2E: 실 세션에서 `/wdis 3` 입력 → 최근 3건이 시간 오름차순(가장 최근이 마지막 줄)으로 출력됨. 건수가 3 미만인 세션에서도 있는 만큼만 정상 출력.
   3. 수동 E2E: 결과에 **`/wdis` 자신이 포함되지 않고**, `/wdis` 실행 직전의 일반 프롬프트가 반환된다.
   4. 표시 충실도는 **의미적 동일성**으로 판정한다 — 주입된 출력의 행 수·순서·내용이 그대로 유지되면 통과(요약·재정렬·해설 추가는 불합격).
@@ -78,7 +78,7 @@ Claude Code 턴 종료 시(Stop hook) "방금 사용자 요청 + 요청 시간"�
 
 | # | 항목 | 판정 |
 |---|---|---|
-| 1 | 파서 단위 테스트 | `node --test scripts/` N/N 통과 |
+| 1 | 파서 단위 테스트 | `node --test` N/N 통과 |
 | 2 | Stop hook 표시 | 새 세션에서 턴 종료 시 요청문+시간 한 줄 표시 |
 | 3 | **`systemMessage` 렌더 실측** | stdout JSON이 실제 화면에 어떻게 렌더되는지, 호스트 prefix(`Stop says:` 등)가 붙는지 확인 → 최종 포맷 확정 후 커밋 3 메시지에 기록 |
 | 4 | **orca `claude-hook.sh`와 Stop 슬롯 공존** | 두 훅이 함께 등록된 상태로 1회 턴 종료 → 출력이 섞이거나 잘리지 않는지 육안 확인. 섞이면 출력 형식을 조정하고 결과를 커밋 3 메시지에 기록 |

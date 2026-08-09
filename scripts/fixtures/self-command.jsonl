@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"파서 테스트 케이스 추가해줘"},"timestamp":"2026-08-09T02:00:00.000Z","isSidechain":false}
+{"type":"user","message":{"role":"user","content":"<command-name>/wdis-help</command-name>\n<command-message>wdis-help</command-message>\n<command-args>1</command-args>"},"timestamp":"2026-08-09T02:01:00.000Z","isSidechain":false}
+{"type":"user","message":{"role":"user","content":"<command-name>/what-did-i-say:wdis</command-name>\n<command-message>wdis</command-message>\n<command-args>2</command-args>"},"timestamp":"2026-08-09T02:02:00.000Z","isSidechain":false}
+{"type":"user","message":{"role":"user","content":"<command-name>/wdis</command-name>\n<command-message>wdis</command-message>\n<command-args>3</command-args>"},"timestamp":"2026-08-09T02:03:00.000Z","isSidechain":false}

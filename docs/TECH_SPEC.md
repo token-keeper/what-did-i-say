@@ -255,8 +255,8 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 
 ## 8. 테스트 전략
 
-`node --test scripts/` 로 실행하며, 픽스처는 실제 jsonl 라인을 축소한 `scripts/fixtures/*.jsonl`을 쓴다.
-**완료 게이트는 `node --test scripts/` 전체 통과 하나뿐이다.** 커버리지(`node --test --experimental-test-coverage`,
+`node --test` 로 실행하며, 픽스처는 실제 jsonl 라인을 축소한 `scripts/fixtures/*.jsonl`을 쓴다.
+**완료 게이트는 `node --test` 전체 통과 하나뿐이다.** 커버리지(`node --test --experimental-test-coverage`,
 70% 이상)는 게이트가 아니라 참고 목표로만 측정한다.
 
 | # | 케이스 | 기대 |
