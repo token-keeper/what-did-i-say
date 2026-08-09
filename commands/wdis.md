@@ -1,8 +1,10 @@
 ---
-description: 최근 요청한 내용을 시각과 함께 최대 N건 표시합니다 (기본 1건, 최대 100건)
+description: 최근 요청한 내용을 시각과 함께 최대 N건 표시합니다 (기본 1건, 최대 10건)
 argument-hint: "[N]"
 allowed-tools: Bash(node:*)
 ---
+
+<!-- 폴백 경로 — 보통은 UserPromptExpansion 훅이 먼저 처리해 여기까지 오지 않는다 -->
 
 !`node "${CLAUDE_PLUGIN_ROOT}/scripts/wdis.mjs" --list "$0" --session-id "${CLAUDE_SESSION_ID}"`
 

@@ -18,9 +18,9 @@
 
 ```
 .claude-plugin/plugin.json   # 플러그인 매니페스트 (메타데이터만)
-hooks/hooks.json             # Stop hook 등록
-commands/wdis.md             # /wdis 슬래시 커맨드 정의
-scripts/wdis.mjs             # 진입점 — hook 모드 / --list 모드 분기, 시간 포맷, 세션 탐색
+hooks/hooks.json             # Stop · UserPromptExpansion hook 등록
+commands/wdis.md             # /wdis 슬래시 커맨드 정의 (UserPromptExpansion 미지원 버전용 폴백)
+scripts/wdis.mjs             # 진입점 — hook / --expand / --list 모드 분기, 시간 포맷, 세션 탐색
 scripts/parser.mjs           # jsonl 역방향 스캔 + 필터 + 텍스트 정규화 (핵심 로직)
 scripts/parser.test.mjs      # node --test
 scripts/fixtures/*.jsonl     # 실제 라인을 축소한 픽스처
@@ -43,13 +43,26 @@ scripts/fixtures/*.jsonl     # 실제 라인을 축소한 픽스처
 
 ### 2.2 실행 흐름 — `/wdis N` 모드
 
-1. `/what-did-i-say:wdis N`(단축 `/wdis N`)을 실행하면 `commands/wdis.md`가 로드되고, 본문의 `` !`...` `` **dynamic context injection**이 `node "${CLAUDE_PLUGIN_ROOT}/scripts/wdis.mjs" --list "$0" ...` 을 **먼저 실행**해 그 stdout을 프롬프트에 주입한다. Claude가 실행 여부를 판단하는 구조가 아니므로 실행 경로가 고정된다.
+경로가 둘이다. **1순위는 `UserPromptExpansion` 훅**이며 LLM 턴·컨텍스트를 전혀 쓰지 않는다(턴 0). 훅을 지원하지 않는 구버전에서만 `commands/wdis.md` 폴백으로 내려간다.
+
+**1순위 — `UserPromptExpansion` 훅 (턴 0)**
+
+1. 사용자가 `/wdis N`을 입력하면 슬래시 커맨드가 전개되기 전에 훅이 `wdis.mjs --expand`를 실행하고 stdin으로 payload를 넘긴다: `command_name` · `command_args` · `prompt` · `session_id` · `transcript_path` · `cwd`.
+2. **라우팅** — `command_name`이 `wdis` 또는 `what-did-i-say:wdis`(앞의 `/` 유무 무관)일 때만 처리한다. `command_name`이 없으면 `prompt`의 첫 토큰이 `/wdis`·`/what-did-i-say:wdis`인 경우만 처리한다. **그 외에는 아무것도 출력하지 않고 exit 0** — 다른 플러그인의 커맨드를 막지 않기 위한 필수 조건이다.
+3. `N`은 `command_args` 우선, 없으면 `prompt`에서 커맨드 토큰을 뗀 첫 토큰을 쓴다(§4의 보정 규칙 동일).
+4. transcript는 stdin `transcript_path` → stdin `session_id` → §2.3 체인 순으로 정한다. `cwd`도 stdin 값을 우선한다.
+5. stdout에 `{"decision":"block","reason":"<목록>"}` **한 줄**을 쓰고 exit 0. Claude Code가 프롬프트를 차단하고 `reason`을 터미널에 직접 표시한다 — LLM 호출이 발생하지 않는다.
+6. 조회 실패(세션 파일 없음 등)도 §7의 안내 문구를 `reason`에 담아 block으로 돌려준다. **단, 우리 커맨드로 라우팅이 확정된 뒤에만** 그렇게 한다. 라우팅 이전 실패(stdin 손상 등)는 무출력 exit 0이다.
+
+**폴백 — `commands/wdis.md` (LLM 턴 소비)**
+
+1. 훅이 가로채지 못했을 때만 `commands/wdis.md`가 로드되고, 본문의 `` !`...` `` **dynamic context injection**이 `node "${CLAUDE_PLUGIN_ROOT}/scripts/wdis.mjs" --list "$0" ...` 을 **먼저 실행**해 그 stdout을 프롬프트에 주입한다. Claude가 실행 여부를 판단하는 구조가 아니므로 실행 경로가 고정된다.
 2. `wdis.mjs`가 현재 세션 jsonl(§2.3)을 찾아 최근 N건을 수집해 여러 줄로 출력한다. `N` 생략 시 1.
 3. Claude는 주입된 출력의 **행 수·순서·내용을 유지해**(의미적 동일성) 사용자에게 표시한다. frontmatter `allowed-tools`로 이 커맨드가 쓸 수 있는 도구를 제한해 추가 조회·재가공을 막는다.
 
-### 2.3 세션 식별 (list 모드 한정)
+### 2.3 세션 식별 (list·expand 모드)
 
-hook 모드는 `transcript_path`를 받으므로 탐색이 필요 없다. list 모드는 아래 **우선순위**로 현재 세션 파일을 정한다.
+Stop hook 모드는 `transcript_path`를 받으므로 탐색이 필요 없다. expand 모드도 stdin에 `transcript_path`가 오면 그것을 그대로 쓰고, 없을 때만 아래 체인으로 내려간다. list 모드는 항상 아래 **우선순위**로 현재 세션 파일을 정한다.
 
 1. **`${CLAUDE_SESSION_ID}` — 기본 경로.** `commands/wdis.md` 본문에서 Claude Code 공식 치환 변수 `${CLAUDE_SESSION_ID}`를 스크립트 인자(`--session-id`)로 전달한다. 스크립트는 `~/.claude/projects/<슬러그>/<session-id>.jsonl`을 직접 지정하므로 현재 세션이 정확히 선택된다.
 2. **환경변수 `CLAUDE_CODE_SESSION_ID`.** 1이 비어 있을 때만 사용한다.
@@ -89,7 +102,7 @@ hook 모드는 `transcript_path`를 받으므로 탐색이 필요 없다. list �
 
 ```js
 // parser.mjs
-export const MAX_LIMIT = 100;                 // /wdis N 상한
+export const MAX_LIMIT = 10;                  // /wdis N 상한
 export const MAX_SCAN_BYTES = 10 * 1024 * 1024; // 총 스캔 바이트 상한 (10MiB)
 
 export function collectRecent(filePath, limit, { chunkSize = 65536, maxBytes = MAX_SCAN_BYTES } = {})
@@ -100,7 +113,7 @@ export function normalizeText(raw)          // → string (공백 collapse + tri
 
 절차:
 
-1. `fs.openSync` + `fstatSync`로 파일 크기를 구한다. `limit`은 호출 전에 **1~`MAX_LIMIT`(100)** 으로 보정한다.
+1. `fs.openSync` + `fstatSync`로 파일 크기를 구한다. `limit`은 호출 전에 **1~`MAX_LIMIT`(10)** 으로 보정한다.
 2. 파일 끝에서 `chunkSize` 바이트씩 앞으로 이동하며 읽고, 읽은 Buffer를 **앞쪽에 이어붙인다**.
 3. **Buffer를 모두 이어붙인 뒤에 `toString('utf8')`을 호출한다** — 청크 경계에서 한글 등 멀티바이트 문자가 잘리는 문제를 피한다.
 4. 개행으로 분리해 뒤에서부터 `extractRequest`에 넘긴다. 첫 조각(파일 앞쪽으로 이어지는 불완전 라인)은 다음 청크와 결합할 때까지 보류한다.
@@ -190,7 +203,7 @@ Claude Code가 플러그인 설치 경로로 치환한다.
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "what-did-i-say",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "턴이 끝날 때 방금 요청한 내용과 시각을 한 줄로 다시 표시하고 /wdis 로 최근 요청을 조회",
   "author": { "name": "brody424" },
   "license": "MIT",
@@ -198,11 +211,22 @@ Claude Code가 플러그인 설치 경로로 치환한다.
 }
 ```
 
-`hooks/hooks.json` — Stop hook 등록.
+`hooks/hooks.json` — Stop hook + UserPromptExpansion hook 등록.
 
 ```json
 {
   "hooks": {
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/wdis.mjs\" --expand",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -218,11 +242,14 @@ Claude Code가 플러그인 설치 경로로 치환한다.
 }
 ```
 
-`commands/wdis.md` — Claude에게 실행을 부탁하는 prompt가 아니라, **`allowed-tools` 제한 + dynamic context injection**으로 실행 결과를 사전 주입하는 구조다. 커맨드 인자 중 **첫 번째는 `$0`** 이다(`$1`이 아니다).
+- `UserPromptExpansion`은 **모든 슬래시 커맨드**에 대해 호출된다. 우리 커맨드가 아닐 때 무언가를 출력하면 남의 커맨드를 막게 되므로, 라우팅에 걸리지 않으면 반드시 무출력으로 끝낸다(§2.2-2).
+- 이 슬롯도 여러 플러그인이 공유한다. block을 반환하는 것은 우리 커맨드일 때뿐이므로 타 플러그인과 충돌하지 않는다.
+
+`commands/wdis.md` — 훅 미지원 버전용 폴백이다. Claude에게 실행을 부탁하는 prompt가 아니라, **`allowed-tools` 제한 + dynamic context injection**으로 실행 결과를 사전 주입하는 구조다. 커맨드 인자 중 **첫 번째는 `$0`** 이다(`$1`이 아니다).
 
 ```markdown
 ---
-description: 최근 요청한 내용을 시각과 함께 최대 N건 표시합니다 (기본 1건, 최대 100건)
+description: 최근 요청한 내용을 시각과 함께 최대 N건 표시합니다 (기본 1건, 최대 10건)
 argument-hint: "[N]"
 allowed-tools: Bash(node:*)
 ---
@@ -272,7 +299,7 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 | 8 | 다중 줄 입력 | `"첫 줄\r\n\n  둘째 줄\t셋째 "` → 정확히 `"첫 줄 둘째 줄 셋째"` (개행 없음) |
 | 9 | 최신 라인의 `timestamp` 누락·파싱 불가 | 그 라인은 skip하고 **직전 정상 요청**으로 fallback |
 | 10 | 역방향 스캔 N건 중단 | 픽스처가 20건이어도 `limit=3`이면 3건, 시간 오름차순 |
-| 11 | `limit` 초과값 clamp | `--list 500` → 100건으로 보정하고 보정 안내 1줄 포함 |
+| 11 | `limit` 초과값 clamp | `--list 500` → 10건으로 보정하고 보정 안내 1줄 포함 |
 | 12 | `maxBytes` 도달 | 예외 없이 그때까지 수집한 분량만 반환 |
 | 13 | list 모드 자기 제외 | 최신 라인이 `/wdis 3`이면 건너뛰고 그 이전 요청부터 채운다 |
 | 14 | 자기 제외 경계(음성) | `/wdis-help 1`은 제외하지 **않고** 그대로 채택한다 |
@@ -290,7 +317,7 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 1. **같은 프로젝트 병렬 세션 — mtime fallback 경로에서만 해당.** list 모드는 `${CLAUDE_SESSION_ID}`(또는 env)로 현재 세션 파일을 정확히 지정하므로 병렬 세션에서도 정상 동작한다. 다만 두 값이 모두 없어 §2.3-3의 mtime fallback으로 내려간 경우에는, 동일 cwd의 다른 세션 요청을 표시할 수 있다. hook 모드는 `transcript_path`를 받으므로 해당하지 않는다.
 2. **jsonl 스키마 의존** — Claude Code 내부 포맷이므로 상위 버전에서 필드명이 바뀔 수 있다. 파싱 실패는 조용한 무출력으로 흡수되어 사용자에게 오류로 보이지 않는다.
 3. **표시 위치** — Stop hook이 반환한 `systemMessage`를 Claude Code가 턴 종료 직후 표시한다. statusline이나 별도 창을 쓰지 않으며, 표시 형식(호스트 prefix 포함 여부)은 호스트가 결정한다.
-4. **스캔 상한** — 무상태 원칙을 유지하면서 대용량 jsonl에서 비용이 폭주하지 않도록 두 개의 상한을 둔다. `N` 상한은 **100**이며 초과 입력은 100으로 보정하고 한 줄 안내한다. 총 스캔 바이트 상한은 **10MiB**이며, 도달하면 그때까지 수집한 분량만 반환한다 — 세션 초반 요청까지 거슬러 올라가지 못할 수 있다.
+4. **스캔 상한** — 무상태 원칙을 유지하면서 대용량 jsonl에서 비용이 폭주하지 않도록 두 개의 상한을 둔다. `N` 상한은 **10**이며 초과 입력은 10으로 보정하고 한 줄 안내한다. 총 스캔 바이트 상한은 **10MiB**이며, 도달하면 그때까지 수집한 분량만 반환한다 — 세션 초반 요청까지 거슬러 올라가지 못할 수 있다.
 
 ## 10. 2단계 — Codex 지원
 

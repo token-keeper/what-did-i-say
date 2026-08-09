@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "what-did-i-say",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "턴이 끝날 때 방금 요청한 내용과 시각을 한 줄로 다시 표시하고 /wdis 로 최근 요청을 조회",
   "author": {
     "name": "brody424"

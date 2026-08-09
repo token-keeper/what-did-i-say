@@ -1,4 +1,4 @@
-// 진입점 — Stop hook 모드(인자 없음) / --list 모드 분기, 시간 포맷, 세션 파일 탐색 (TECH_SPEC §2·§5·§7)
+// 진입점 — Stop hook 모드(인자 없음) / --expand 모드 / --list 모드 분기, 시간 포맷, 세션 파일 탐색 (TECH_SPEC §2·§5·§7)
 // jsonl 스캔·필터는 parser.mjs 담당이다.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -12,6 +12,8 @@ const NO_REQUEST = '표시할 요청이 없습니다';
 const UNREADABLE = '요청 기록을 읽지 못했습니다';
 // 세션 id는 경로로 쓰인다 — 치환되지 않은 ${CLAUDE_SESSION_ID}와 경로 이탈을 함께 걸러낸다
 const SESSION_ID = /^[A-Za-z0-9_-]+$/;
+// UserPromptExpansion에서 우리 커맨드로 인정하는 이름 (앞의 `/`는 떼고 비교한다)
+const EXPAND_NAMES = new Set(['wdis', 'what-did-i-say:wdis']);
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -81,19 +83,62 @@ function argValue(argv, name) {
   return value === undefined || value.startsWith('--') ? undefined : value;
 }
 
+/** 목록 본문(개행 포함)을 만든다. 조회 실패는 안내 한 줄로 대신하되 보정 안내(notes)는 유지한다. */
+function renderList(file, limit, notes, now) {
+  if (!file) return [...notes, NO_SESSION].join('\n') + '\n';
+  const rows = collectRecent(file, limit, { excludeSelf: true });
+  if (rows.length === 0) return [...notes, NO_REQUEST].join('\n') + '\n';
+  // rows는 오름차순, [1]이 가장 최근이므로 뒤에서부터 번호를 매긴다
+  const lines = rows.map((row, i) => `[${rows.length - i}] ${formatLine(row, now)}`);
+  return [...notes, ...lines].join('\n') + '\n';
+}
+
 /** --list 모드 출력 전문(개행 포함)을 만든다. */
 export function runList(argv, { now = new Date(), env = process.env, cwd = process.cwd(), home } = {}) {
   const notes = [];
   const limit = parseLimit(argValue(argv, '--list'), notes);
   const sessionId = argValue(argv, '--session-id') || env.CLAUDE_CODE_SESSION_ID;
-  const file = resolveTranscript(sessionDir(cwd, home ?? os.homedir()), sessionId);
-  if (!file) return `${NO_SESSION}\n`;
+  return renderList(resolveTranscript(sessionDir(cwd, home ?? os.homedir()), sessionId), limit, notes, now);
+}
 
-  const rows = collectRecent(file, limit, { excludeSelf: true });
-  if (rows.length === 0) return `${NO_REQUEST}\n`;
-  // rows는 오름차순, [1]이 가장 최근이므로 뒤에서부터 번호를 매긴다
-  const lines = rows.map((row, i) => `[${rows.length - i}] ${formatLine(row, now)}`);
-  return [...notes, ...lines].join('\n') + '\n';
+/**
+ * UserPromptExpansion payload가 우리 커맨드면 인자 문자열, 아니면 null.
+ * command_name이 있으면 그것만으로 판정한다 — prompt prefix 매칭으로 타 커맨드를 삼키지 않기 위해서다.
+ */
+export function expandArgs({ command_name: name, command_args: args, prompt }) {
+  const text = typeof prompt === 'string' ? prompt.trim() : '';
+  // prompt는 인자만(`3`)일 수도, 슬래시를 포함(`/wdis 3`)일 수도 있다
+  const fromPrompt = () => text.replace(/^\/\S+\s*/, '');
+  if (typeof name === 'string' && name.trim() !== '') {
+    if (!EXPAND_NAMES.has(name.trim().replace(/^\//, ''))) return null;
+    return typeof args === 'string' ? args.trim() : fromPrompt();
+  }
+  const head = text.split(/\s+/)[0];
+  if (!head.startsWith('/') || !EXPAND_NAMES.has(head.slice(1))) return null;
+  return fromPrompt();
+}
+
+/** --expand 모드의 reason 문자열. 우리 커맨드가 아니면 null(= 무출력으로 통과시킨다). */
+export function runExpand(stdin, { now = new Date(), env = process.env, home } = {}) {
+  const input = JSON.parse(stdin) ?? {};
+  const args = expandArgs(input);
+  if (args === null) return null;
+  try {
+    const notes = [];
+    const limit = parseLimit(args.split(/\s+/)[0], notes);
+    const { transcript_path: given, session_id: sessionId, cwd } = input;
+    const file =
+      typeof given === 'string' && fs.existsSync(given)
+        ? given
+        : resolveTranscript(
+            sessionDir(typeof cwd === 'string' && cwd ? cwd : process.cwd(), home ?? os.homedir()),
+            sessionId || env.CLAUDE_CODE_SESSION_ID,
+          );
+    return renderList(file, limit, notes, now).trimEnd();
+  } catch {
+    // 라우팅은 끝났으므로 침묵하지 않는다 — 커맨드를 삼키면 사용자에게 아무 반응이 없다
+    return UNREADABLE;
+  }
 }
 
 /** hook 모드 출력(없으면 빈 문자열). 예외는 삼키지 않고 호출자에게 올린다. */
@@ -105,6 +150,16 @@ export function runHook(stdin, now = new Date()) {
 }
 
 function main(argv) {
+  if (argv.includes('--expand')) {
+    try {
+      const reason = runExpand(fs.readFileSync(0, 'utf8'));
+      // null = 우리 커맨드가 아니다. 무출력으로 통과시켜야 타 플러그인 커맨드가 막히지 않는다.
+      if (reason !== null) process.stdout.write(JSON.stringify({ decision: 'block', reason }) + '\n');
+    } catch {
+      /* 라우팅 이전 실패(stdin 손상 등) — 남의 커맨드일 수 있으므로 무출력 */
+    }
+    return;
+  }
   if (!argv.includes('--list')) {
     // §7 — 예외를 삼키는 지점은 여기 한 곳뿐이다. 무엇이 실패하든 무출력 exit 0.
     try {
