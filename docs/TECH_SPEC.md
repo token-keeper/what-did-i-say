@@ -136,6 +136,7 @@ export function normalizeText(raw)          // → string (공백 collapse + tri
 | 2 | `<local-command-stdout>` | 해당 라인은 제외한다 |
 | 3 | `<local-command-caveat>` | 슬래시 커맨드 실행에 딸려오는 안내 문구이므로 제외한다 |
 | 4 | `<system-reminder>` 등 주입 컨텍스트 | 태그 블록을 제거한다. 제거 후 남은 사용자 텍스트가 있으면 그 텍스트만 채택하고, 남는 것이 없으면 제외한다 |
+| 4b | `<teammate-message>`·`<task-notification>`·`<cross-session-message>` 포함 라인 | 시스템·타 에이전트가 주입한 user 턴이므로 **라인 전체 제외** — 실측상 `isMeta` 마커가 없어 텍스트 패턴으로만 걸러진다 |
 | 5 | 공백 정규화 | CRLF/LF를 포함한 **연속 공백을 단일 공백으로 collapse** 한 뒤 앞뒤 공백을 제거한다 (`raw.replace(/\s+/g, ' ').trim()`). 첫 줄만 취하지 않고 전체를 한 줄로 접는다 |
 | 6 | 길이 제한 | **Unicode code point 기준 최대 80** — `Array.from(text).length > 80`이면 앞 **79 code points + `…`** 로 절단한다(결과 80 code points). `Array.from`을 쓰므로 이모지 등의 surrogate pair가 반으로 갈리지 않는다 |
 

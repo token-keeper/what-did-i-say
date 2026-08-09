@@ -41,6 +41,13 @@ test('<command-name> 래퍼는 "/커맨드 인자" 한 줄로 환원한다', () 
   assert.equal(noArgs.text, '/clear');
 });
 
+// 3b — 실측: teammate/task-notification 주입 턴은 isMeta 마커가 없다
+test('teammate-message·task-notification·cross-session 주입 턴은 제외한다', () => {
+  assert.equal(extractRequest(userLine('Another Claude session sent a message:\n<teammate-message teammate_id="impl-b" color="cyan">{"type":"idle_notification"}</teammate-message>')), null);
+  assert.equal(extractRequest(userLine('[SYSTEM NOTIFICATION - NOT USER INPUT]\n<task-notification>\n<task-id>abc</task-id>\n</task-notification>')), null);
+  assert.equal(extractRequest(userLine('<cross-session-message from="worker">check tests</cross-session-message>')), null);
+});
+
 // 4
 test('isSidechain: true 는 제외한다', () => {
   assert.equal(extractRequest(userLine('서브에이전트 내부 프롬프트', { isSidechain: true })), null);

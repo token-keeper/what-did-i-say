@@ -9,10 +9,13 @@ const MAX_CODE_POINTS = 80;
 const NEWLINE = 0x0a;
 // 커맨드 토큰이 정확히 일치할 때만 자기 제외 — /wdis-help 는 대상이 아니다
 const SELF_COMMAND = /^\/(?:wdis|what-did-i-say:wdis)(?:\s|$)/;
+// 시스템·타 에이전트가 주입한 user 턴 — isMeta 마커가 없어 텍스트 패턴으로만 걸러진다 (실측)
+const INJECTED_TURN = /<teammate-message|<task-notification>|<cross-session-message/;
 
 /** 원문 텍스트를 표시용 한 줄로 정규화한다. 제외 대상이면 빈 문자열. */
 export function normalizeText(raw) {
   if (typeof raw !== 'string' || raw === '') return '';
+  if (INJECTED_TURN.test(raw)) return '';
 
   let text = raw;
   const name = text.match(/<command-name>([\s\S]*?)<\/command-name>/);
