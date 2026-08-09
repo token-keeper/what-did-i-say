@@ -1,0 +1,13 @@
+# OS noise
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Node
+node_modules/
+npm-debug.log*
+.env
+.env.local
