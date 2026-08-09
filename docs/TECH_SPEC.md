@@ -4,14 +4,14 @@
 
 ## 1. 개요·범위
 
-턴이 끝날 때(Stop hook) "방금 무엇을 요청했는지 + 언제 요청했는지"를 터미널에 한 줄로 다시 표시하고,
-`/wdis N`으로 최근 N건을 조회하는 Claude Code 플러그인.
+턴이 끝날 때(Stop hook) "방금 무엇을 요청했는지 + 언제 요청했는지"를 한 줄로 다시 표시하고,
+`/what-did-i-say:wdis N`(단축 `/wdis N`)으로 최근 N건을 조회하는 Claude Code 플러그인.
 
 | 구분 | 내용 |
 |---|---|
-| 범위(MVP) | Claude Code Stop hook 1줄 출력 · `/wdis N` 조회 · 현재 세션 한정 |
+| 범위(MVP) | Claude Code Stop hook `systemMessage` 한 줄 표시 · `/wdis N` 조회 · 현재 세션 한정 |
 | 비범위 | Codex 지원(2단계, §10) · 세션 간 통합 조회 · 인덱스/DB · 웹 UI · 설정 파일 |
-| 런타임 | Node.js 18+ (ESM `.mjs`), **외부 의존성 제로** — stdlib만 사용 |
+| 런타임 | Node.js **18.17+** (ESM `.mjs`), **외부 의존성 제로** — stdlib만 사용 |
 | 상태 | 무상태. 인덱스·캐시·상태 파일을 만들지 않으며, 원천 jsonl을 매번 읽는다 |
 
 ## 2. 아키텍처
@@ -36,25 +36,29 @@ scripts/fixtures/*.jsonl     # 실제 라인을 축소한 픽스처
 ### 2.1 실행 흐름 — Stop hook 모드
 
 1. Claude Code가 stdin으로 JSON을 전달한다: `session_id` · `transcript_path` · `cwd` · `stop_hook_active`.
-2. `stop_hook_active === true`면 재진입이므로 출력 없이 종료한다(중복 표시 방지).
-3. `transcript_path`를 그대로 역방향 스캔해 조건을 만족하는 **최신 1건**을 찾는다.
-4. stdout에 한 줄을 출력하고 **항상 exit 0**.
+   `stop_hook_active`는 수신만 하고 분기에 쓰지 않는다 — 이 플러그인은 턴을 block하지 않아 재진입 루프가 생기지 않으므로 gate 없이 **Stop event마다** 표시한다.
+2. `transcript_path`를 그대로 역방향 스캔해 조건을 만족하는 **최신 1건**을 찾는다.
+3. stdout에 `{"systemMessage":"..."}` **JSON 객체 하나만** 출력하고 **항상 exit 0**.
+   hook의 plain text stdout은 debug log로만 전달되어 사용자 화면에 나타나지 않으므로, 표시 경로는 반드시 이 JSON 계약을 사용한다.
 
 ### 2.2 실행 흐름 — `/wdis N` 모드
 
-1. `commands/wdis.md`가 Claude에게 `node "${CLAUDE_PLUGIN_ROOT}/scripts/wdis.mjs" --list N` 실행을 지시한다.
-2. `wdis.mjs`가 현재 세션 jsonl을 찾아 최근 N건을 수집한다. `N` 생략 시 1.
-3. 표준출력의 여러 줄을 Claude가 가공 없이 그대로 사용자에게 표시한다.
+1. `/what-did-i-say:wdis N`(단축 `/wdis N`)을 실행하면 `commands/wdis.md`가 로드되고, 본문의 `` !`...` `` **dynamic context injection**이 `node "${CLAUDE_PLUGIN_ROOT}/scripts/wdis.mjs" --list "$0" ...` 을 **먼저 실행**해 그 stdout을 프롬프트에 주입한다. Claude가 실행 여부를 판단하는 구조가 아니므로 실행 경로가 고정된다.
+2. `wdis.mjs`가 현재 세션 jsonl(§2.3)을 찾아 최근 N건을 수집해 여러 줄로 출력한다. `N` 생략 시 1.
+3. Claude는 주입된 출력의 **행 수·순서·내용을 유지해**(의미적 동일성) 사용자에게 표시한다. frontmatter `allowed-tools`로 이 커맨드가 쓸 수 있는 도구를 제한해 추가 조회·재가공을 막는다.
 
 ### 2.3 세션 식별 (list 모드 한정)
 
-hook 모드는 `transcript_path`를 받으므로 탐색이 필요 없다. list 모드는 아래 순서로 찾는다.
+hook 모드는 `transcript_path`를 받으므로 탐색이 필요 없다. list 모드는 아래 **우선순위**로 현재 세션 파일을 정한다.
 
-1. `process.cwd()`의 비영숫자를 `-`로 치환해 슬러그를 만든다.
-   `/Users/mini/Github/ai-tools/kaivo` → `-Users-mini-Github-ai-tools-kaivo`
-   (구현: `cwd.replace(/[^a-zA-Z0-9]/g, '-')`)
-2. `~/.claude/projects/<슬러그>/` 안의 `*.jsonl` 중 **mtime이 가장 최신인 파일**을 현재 세션으로 간주한다.
-3. 디렉터리 또는 파일이 없으면 §7의 list 모드 에러 문구를 출력한다.
+1. **`${CLAUDE_SESSION_ID}` — 기본 경로.** `commands/wdis.md` 본문에서 Claude Code 공식 치환 변수 `${CLAUDE_SESSION_ID}`를 스크립트 인자(`--session-id`)로 전달한다. 스크립트는 `~/.claude/projects/<슬러그>/<session-id>.jsonl`을 직접 지정하므로 현재 세션이 정확히 선택된다.
+2. **환경변수 `CLAUDE_CODE_SESSION_ID`.** 1이 비어 있을 때만 사용한다.
+3. **mtime 최신 파일 — 최후 fallback.** 1·2가 모두 없을 때만 슬러그 디렉터리의 `*.jsonl` 중 mtime이 가장 최신인 파일을 쓴다. **이 경로는 현재 세션을 보장하지 않는다**(§9-1).
+
+슬러그 규칙: `process.cwd()`의 비영숫자를 `-`로 치환한다(구현: `cwd.replace(/[^a-zA-Z0-9]/g, '-')`).
+`/Users/mini/Github/ai-tools/kaivo` → `-Users-mini-Github-ai-tools-kaivo`
+
+디렉터리 또는 파일이 없으면 §7의 list 모드 에러 문구를 출력한다.
 
 ## 3. 데이터 소스 (jsonl 스키마)
 
@@ -85,18 +89,25 @@ hook 모드는 `transcript_path`를 받으므로 탐색이 필요 없다. list �
 
 ```js
 // parser.mjs
-export function collectRecent(filePath, limit, { chunkSize = 65536 } = {})  // → [{ timestamp, text }] 오름차순
-export function extractRequest(line)                                        // → { timestamp, text } | null
-export function normalizeText(raw)                                          // → string (첫 줄 + 절단)
+export const MAX_LIMIT = 100;                 // /wdis N 상한
+export const MAX_SCAN_BYTES = 10 * 1024 * 1024; // 총 스캔 바이트 상한 (10MiB)
+
+export function collectRecent(filePath, limit, { chunkSize = 65536, maxBytes = MAX_SCAN_BYTES } = {})
+                                            // → [{ timestamp, text }] 오름차순
+export function extractRequest(line)        // → { timestamp, text } | null
+export function normalizeText(raw)          // → string (공백 collapse + trim + 절단)
 ```
 
 절차:
 
-1. `fs.openSync` + `fstatSync`로 파일 크기를 구한다.
+1. `fs.openSync` + `fstatSync`로 파일 크기를 구한다. `limit`은 호출 전에 **1~`MAX_LIMIT`(100)** 으로 보정한다.
 2. 파일 끝에서 `chunkSize` 바이트씩 앞으로 이동하며 읽고, 읽은 Buffer를 **앞쪽에 이어붙인다**.
 3. **Buffer를 모두 이어붙인 뒤에 `toString('utf8')`을 호출한다** — 청크 경계에서 한글 등 멀티바이트 문자가 잘리는 문제를 피한다.
 4. 개행으로 분리해 뒤에서부터 `extractRequest`에 넘긴다. 첫 조각(파일 앞쪽으로 이어지는 불완전 라인)은 다음 청크와 결합할 때까지 보류한다.
-5. 채택 건수가 `limit`에 도달하거나 파일 시작에 도달하면 즉시 중단하고 `closeSync`.
+5. 아래 셋 중 하나에 도달하면 즉시 중단하고 `closeSync` 한다.
+   - 채택 건수가 `limit`에 도달
+   - 파일 시작에 도달
+   - **읽은 누적 바이트가 `maxBytes`(10MiB)에 도달** — 이 경우 예외 없이 **그때까지 수집한 분량만** 반환한다
 6. 수집 결과를 뒤집어 **시간 오름차순**으로 반환한다.
 
 ### 4.2 채택 조건
@@ -105,12 +116,15 @@ export function normalizeText(raw)                                          // �
 
 1. JSON 파싱에 성공한다(실패 시 `null`).
 2. `type === "user"`.
-3. `isSidechain !== true`.
-4. `isMeta !== true`.
-5. `message.content`가 배열이고 `type === "tool_result"` 항목을 포함하면 제외한다.
-6. 텍스트를 아래 §4.3으로 정규화한 결과가 빈 문자열이 아니다.
+3. **`timestamp`가 유효하다** — `typeof timestamp === "string" && Number.isFinite(Date.parse(timestamp))`. 어긋나면 그 라인만 `null`로 흘리고 역방향 스캔을 계속해 **직전의 정상 요청**으로 넘어간다.
+4. `isSidechain !== true`.
+5. `isMeta !== true`.
+6. `message.content`가 배열이고 `type === "tool_result"` 항목을 포함하면 제외한다.
+7. 텍스트를 아래 §4.3으로 정규화한 결과가 빈 문자열이 아니다.
 
 배열 content에서 텍스트를 얻을 때는 `type === "text"` 항목의 `text`만 이어붙인다.
+
+**list 모드 자기 제외** — `--list` 모드에서는 `/wdis` 커맨드 자신을 결과에서 제외한다. §4.3의 1번 규칙으로 환원한 결과가 `/wdis` 또는 `/what-did-i-say:wdis`로 시작하는 라인(인자 유무 무관)은 건너뛰고, **부족한 건수만큼 더 과거로 역스캔을 이어간다**. hook 모드에는 적용하지 않는다.
 
 ### 4.3 텍스트 정규화
 
@@ -122,8 +136,8 @@ export function normalizeText(raw)                                          // �
 | 2 | `<local-command-stdout>` | 해당 라인은 제외한다 |
 | 3 | `<local-command-caveat>` | 슬래시 커맨드 실행에 딸려오는 안내 문구이므로 제외한다 |
 | 4 | `<system-reminder>` 등 주입 컨텍스트 | 태그 블록을 제거한다. 제거 후 남은 사용자 텍스트가 있으면 그 텍스트만 채택하고, 남는 것이 없으면 제외한다 |
-| 5 | 첫 줄만 사용 | 개행 기준 첫 줄을 취하고 앞뒤 공백을 제거한다 |
-| 6 | 길이 제한 | 80자를 넘으면 **앞 79자 + `…`** 로 절단한다(결과 길이 80자) |
+| 5 | 공백 정규화 | CRLF/LF를 포함한 **연속 공백을 단일 공백으로 collapse** 한 뒤 앞뒤 공백을 제거한다 (`raw.replace(/\s+/g, ' ').trim()`). 첫 줄만 취하지 않고 전체를 한 줄로 접는다 |
+| 6 | 길이 제한 | **Unicode code point 기준 최대 80** — `Array.from(text).length > 80`이면 앞 **79 code points + `…`** 로 절단한다(결과 80 code points). `Array.from`을 쓰므로 이모지 등의 surrogate pair가 반으로 갈리지 않는다 |
 
 ## 5. 출력 포맷
 
@@ -136,11 +150,19 @@ export function normalizeText(raw)                                          // �
 | 24시간 미만 | `N시간 전` |
 | 그 이상 | `N일 전` |
 
-Stop hook (항상 1줄):
+Stop hook — stdout에는 **JSON 객체 하나**만 쓴다.
+
+```json
+{"systemMessage":"🗣 14:32 (12분 전) | 파서 필터 규칙 정리해줘"}
+```
+
+Claude Code가 `systemMessage` 값을 사용자에게 표시한다. 사용자가 보는 한 줄:
 
 ```
 🗣 14:32 (12분 전) | 파서 필터 규칙 정리해줘
 ```
+
+`systemMessage` 값에는 개행이 없다(§4.3-5). 호스트가 표시 시 prefix(`Stop says:` 등)를 덧붙일 수 있으므로, 최종 포맷은 실측 후 확정한다(PLAN 커밋 3 완료 기준).
 
 `/wdis N` (시간 오름차순, 인덱스는 "몇 번째 이전 요청"을 뜻하므로 `[1]`이 가장 최근):
 
@@ -195,20 +217,27 @@ Claude Code가 플러그인 설치 경로로 치환한다.
 }
 ```
 
-`commands/wdis.md` — frontmatter에 `description`, 본문에 실행 지시를 담는다.
+`commands/wdis.md` — Claude에게 실행을 부탁하는 prompt가 아니라, **`allowed-tools` 제한 + dynamic context injection**으로 실행 결과를 사전 주입하는 구조다. 커맨드 인자 중 **첫 번째는 `$0`** 이다(`$1`이 아니다).
 
 ```markdown
 ---
-description: 최근 요청한 내용을 시각과 함께 최대 N건 표시합니다 (기본 1건)
+description: 최근 요청한 내용을 시각과 함께 최대 N건 표시합니다 (기본 1건, 최대 100건)
 argument-hint: "[N]"
+allowed-tools: Bash(node:*)
 ---
 
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/wdis.mjs" --list $1` 을 실행하고,
-표준출력을 **가공하지 말고 그대로** 사용자에게 표시하세요. 요약·재정렬·해설을 덧붙이지 마세요.
+!`node "${CLAUDE_PLUGIN_ROOT}/scripts/wdis.mjs" --list "$0" --session-id "${CLAUDE_SESSION_ID}"`
+
+위 실행 결과가 이 프롬프트에 이미 주입되어 있습니다.
+주입된 출력의 **행 수·순서·내용을 유지해** 사용자에게 표시하세요. 요약·재정렬·해설·추가 조회를 하지 마세요.
 ```
 
-기존 Stop hook(하네스의 orca `claude-hook.sh` 등)과는 병합되어 공존한다. 이 플러그인은 stdout에 한 줄만
-쓰고 종료 코드로 흐름을 제어하지 않으므로 다른 Stop hook의 동작에 관여하지 않는다.
+- `` !`...` `` 는 커맨드 로드 시점에 명령을 실행해 stdout을 프롬프트에 주입한다 — 실행 경로가 Claude의 판단에 좌우되지 않는다.
+- `allowed-tools: Bash(node:*)` 로 이 커맨드가 쓸 수 있는 도구를 주입용 실행 하나로 제한한다.
+- **보장 명령은 `/what-did-i-say:wdis`** 이며, bare `/wdis`는 같은 이름의 커맨드가 없을 때만 동작하는 단축 호출이다.
+
+기존 Stop hook(하네스의 orca `claude-hook.sh` 등)과는 병합되어 공존한다. 이 플러그인은 stdout에 `systemMessage`
+JSON 한 줄만 쓰고 종료 코드로 흐름을 제어하지 않으므로 다른 Stop hook의 동작에 관여하지 않는다.
 
 ## 7. 에러 처리
 
@@ -227,7 +256,8 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 ## 8. 테스트 전략
 
 `node --test scripts/` 로 실행하며, 픽스처는 실제 jsonl 라인을 축소한 `scripts/fixtures/*.jsonl`을 쓴다.
-커버리지는 `node --test --experimental-test-coverage`로 측정하고 **70% 이상**을 목표로 한다.
+**완료 게이트는 `node --test scripts/` 전체 통과 하나뿐이다.** 커버리지(`node --test --experimental-test-coverage`,
+70% 이상)는 게이트가 아니라 참고 목표로만 측정한다.
 
 | # | 케이스 | 기대 |
 |---|---|---|
@@ -237,21 +267,29 @@ hook 모드의 원칙은 **턴 완료를 절대 방해하지 않는 것**이다.
 | 4 | `isSidechain: true` | 제외 |
 | 5 | 배열 content에 `tool_result` 포함 | 제외 |
 | 6 | `<system-reminder>` 혼합 | 태그 블록 제거 후 사용자 텍스트만 채택 |
-| 7 | 80자 초과 | 79자 + `…` (총 80자) |
-| 8 | 역방향 스캔 N건 중단 | 픽스처가 20건이어도 `limit=3`이면 3건, 시간 오름차순 |
-| 9 | 빈 파일 | 빈 배열 |
+| 7 | 80 code points 초과 | `Array.from(결과).length === 80` (79 + `…`), 이모지 포함 입력에서 surrogate pair 미파손 |
+| 8 | 다중 줄 입력 | `"첫 줄\r\n\n  둘째 줄\t셋째 "` → 정확히 `"첫 줄 둘째 줄 셋째"` (개행 없음) |
+| 9 | 최신 라인의 `timestamp` 누락·파싱 불가 | 그 라인은 skip하고 **직전 정상 요청**으로 fallback |
+| 10 | 역방향 스캔 N건 중단 | 픽스처가 20건이어도 `limit=3`이면 3건, 시간 오름차순 |
+| 11 | `limit` 초과값 clamp | `--list 500` → 100건으로 보정하고 보정 안내 1줄 포함 |
+| 12 | `maxBytes` 도달 | 예외 없이 그때까지 수집한 분량만 반환 |
+| 13 | list 모드 자기 제외 | 최신 라인이 `/wdis 3`이면 건너뛰고 그 이전 요청부터 채운다 |
+| 14 | 빈 파일 | 빈 배열 |
+| 15 | hook 모드 stdout | `JSON.parse(stdout)`가 성공하고, `systemMessage`가 `🗣 `로 시작하며 `\n`·`\r`을 포함하지 않는다 |
 
-멀티바이트 경계 회귀를 막기 위해 8번 케이스는 `chunkSize`를 작게(예: 64) 주입해 한글 라인이 여러 청크에
+멀티바이트 경계 회귀를 막기 위해 10번 케이스는 `chunkSize`를 작게(예: 64) 주입해 한글 라인이 여러 청크에
 걸치도록 만든다.
 
 ## 9. 알려진 한계
 
-1. **같은 프로젝트 병렬 세션** — list 모드는 mtime이 최신인 jsonl을 현재 세션으로 간주하므로, 동일 cwd에서 세션 두 개를 함께 사용하면 다른 세션의 요청을 표시할 수 있다. hook 모드는 `transcript_path`를 받으므로 해당하지 않는다.
+1. **같은 프로젝트 병렬 세션 — mtime fallback 경로에서만 해당.** list 모드는 `${CLAUDE_SESSION_ID}`(또는 env)로 현재 세션 파일을 정확히 지정하므로 병렬 세션에서도 정상 동작한다. 다만 두 값이 모두 없어 §2.3-3의 mtime fallback으로 내려간 경우에는, 동일 cwd의 다른 세션 요청을 표시할 수 있다. hook 모드는 `transcript_path`를 받으므로 해당하지 않는다.
 2. **jsonl 스키마 의존** — Claude Code 내부 포맷이므로 상위 버전에서 필드명이 바뀔 수 있다. 파싱 실패는 조용한 무출력으로 흡수되어 사용자에게 오류로 보이지 않는다.
-3. **표시 위치** — Stop hook stdout은 턴 종료 직후 터미널에 남는다. statusline이나 별도 창을 쓰지 않는다.
-4. **N 상한 없음** — `/wdis 500` 같은 큰 값도 그대로 스캔한다. 파일 전체를 훑을 수 있으나 무상태 원칙을 유지하기 위해 상한을 두지 않는다.
+3. **표시 위치** — Stop hook이 반환한 `systemMessage`를 Claude Code가 턴 종료 직후 표시한다. statusline이나 별도 창을 쓰지 않으며, 표시 형식(호스트 prefix 포함 여부)은 호스트가 결정한다.
+4. **스캔 상한** — 무상태 원칙을 유지하면서 대용량 jsonl에서 비용이 폭주하지 않도록 두 개의 상한을 둔다. `N` 상한은 **100**이며 초과 입력은 100으로 보정하고 한 줄 안내한다. 총 스캔 바이트 상한은 **10MiB**이며, 도달하면 그때까지 수집한 분량만 반환한다 — 세션 초반 요청까지 거슬러 올라가지 못할 수 있다.
 
 ## 10. 2단계 — Codex 지원
+
+> 2026-08-09 조사 기록(비규범) — 2단계 착수 시 재실측 후 확정한다.
 
 Codex는 `~/.codex/config.toml`의 `notify`가 단일 슬롯이며 oh-my-codex가 점유 중이므로 이 경로를 쓰지 않는다.
 대신 `~/.codex/hooks.json`의 Stop 엔트리로 등록한다. Codex의 Stop hook stdin 계약이 Claude Code와 호환되므로
