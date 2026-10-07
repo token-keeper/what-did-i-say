@@ -14,6 +14,7 @@ Claude가 답변을 끝내고 입력을 기다리는 동안, 프롬프트 바로
 ```
 
 - 답변 중이거나 설문이 띠를 쓰는 동안에는 숨는다.
+- `/compact` 직후에는 띠를 비우고, 다음 요청부터 다시 표시한다 (자동 compact·서브에이전트 compact·거부된 compact는 그대로 둔다).
 - 요청은 줄바꿈을 유지해 **최대 5줄(빈 줄 포함)·400자**까지 보이고, 넘치면 끝에 `…`을 붙인다.
 - 사람이 직접 입력한 요청만 기록한다 (백그라운드 작업 알림·예약 작업·다른 세션·플러그인이 보낸 프롬프트는 제외). 다른 훅이 막은 프롬프트도 기록하지 않는다.
 - 띠를 쓰는 다른 플러그인(예: cache-necromancer 카운트다운)이 있으면 그 띠 아래에 붙는다.
@@ -83,7 +84,7 @@ token-keeper `plugins` 마켓플레이스 등록 후 제공 예정.
 ```bash
 node --test                  # /wdis 스크립트 34/34 통과
 claude plugin validate .     # 매니페스트·hooks·mod 모듈 검증
-claude plugin test .         # 띠 박스 mod 16/16 통과
+claude plugin test .         # 띠 박스 mod 22/22 통과
 ```
 
 - `scripts/parser.mjs` — transcript jsonl을 끝에서부터 스캔해 사용자 요청만 골라낸다 (슬래시 커맨드 래퍼·hook 주입 컨텍스트·tool_result 제외).

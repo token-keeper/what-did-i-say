@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import type { On, PromptOrigin } from 'claude-code'
+import type { On, PromptOrigin, SessionCompactInput, SessionMessage } from 'claude-code'
 
 const PLUGIN = 'what-did-i-say'
 const SURFACES = ['terminal', 'desktop'] as const
@@ -163,6 +163,64 @@ test('아래에서 막힌(drop) 프롬프트는 저장하지 않는다', async (
     await ui.unmount()
   }
 })
+
+// 엔진 자리 compact: 'SKIP'으로 시작하는 instructions 는 거부(skip)하고, 나머지는 요약 한 줄로 정리한 셈 친다
+const SUMMARY: SessionMessage = { role: 'user', text: 'summary', toolUses: [] }
+function compactEngine(on: On) {
+  on('session.compact', (_$, e) => (e.instructions?.startsWith('SKIP') ? { skip: 'refused' } : { messages: [SUMMARY] }))
+}
+
+const compact = ($: Engine, over: Partial<Pick<SessionCompactInput, 'trigger' | 'agentId' | 'instructions'>> = {}) =>
+  $.session.compact({ trigger: 'manual', messages: [SUMMARY], ...over })
+
+test('/compact 후에는 띠를 비우고, 다음 요청부터 다시 그린다', async ($, on) => {
+  setup(on)
+  compactEngine(on)
+  for (const surface of SURFACES) {
+    await submit($, `정리 전 ${surface}`)
+    const ui = await mount($, surface)
+    expect(await body(ui)).toBe(`정리 전 ${surface}`)
+    expect(await compact($)).toEqual({ messages: [SUMMARY] })
+    expect(await hasPanel(ui)).toBe(false)
+    await submit($, `정리 후 ${surface}`)
+    expect(await body(ui)).toBe(`정리 후 ${surface}`)
+    await ui.unmount()
+  }
+})
+
+test('플러그인이 부른 compact 도 띠를 비운다', async ($, on) => {
+  setup(on)
+  compactEngine(on)
+  await submit($, '서버 배포해줘')
+  await compact($, { trigger: 'plugin' })
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    expect(await hasPanel(ui)).toBe(false)
+    await ui.unmount()
+  }
+})
+
+// 거부된 compact · 서브에이전트 compact · 자동(auto)·사전계산(precompute) compact 는 띠를 그대로 둔다
+const keeps: ReadonlyArray<readonly [string, Partial<Pick<SessionCompactInput, 'trigger' | 'agentId' | 'instructions'>>]> = [
+  ['skip 으로 거부된 compact', { instructions: 'SKIP please' }],
+  ['서브에이전트(agentId) compact', { agentId: 'agent-1' }],
+  ['자동(auto) compact', { trigger: 'auto' }],
+  ['사전계산(precompute) compact', { trigger: 'precompute' }],
+]
+
+for (const [name, over] of keeps) {
+  test(`${name}는 띠를 유지한다`, async ($, on) => {
+    setup(on)
+    compactEngine(on)
+    await submit($, '서버 배포해줘')
+    await compact($, over)
+    for (const surface of SURFACES) {
+      const ui = await mount($, surface)
+      expect(await body(ui)).toBe('서버 배포해줘')
+      await ui.unmount()
+    }
+  })
+}
 
 // 자르기 규칙: 최대 5줄(빈 줄 포함), 줄바꿈 포함 200자(코드포인트), 넘치면 끝에 …
 const cases: ReadonlyArray<readonly [string, string, string]> = [
