@@ -1,5 +1,7 @@
 # what-did-i-say — PRD
 
+> **0.3.0 변경**: 턴 끝 Stop 훅의 한 줄 출력(`systemMessage`)은 프롬프트 위 띠 박스(mod, `hooks/register.tsx`)로 대체됐다. 아래 Stop 훅 관련 내용은 0.2.x 기준 기록이다.
+
 > 작성일 2026-08-09 (일) · 상태 MVP 확정 · 대상 제품 Claude Code 플러그인 `what-did-i-say` (슬래시 커맨드 `/wdis`)
 
 ## 1. 개요

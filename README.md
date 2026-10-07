@@ -64,9 +64,10 @@ token-keeper `plugins` 마켓플레이스 등록 후 제공 예정.
 ## 요구사항
 
 - Node.js 18.17 이상 (`/wdis` 조회용, 외부 의존성 없음, stdlib만 사용)
-- **띠 박스는 Claude Code v2.1.287 이상** (mods = 함수 훅 플러그인 지원 버전). `hooks/hooks.json`의 `modules` 항목으로 로드된다.
-  - 그보다 낮은 버전에서는 `modules`를 읽지 않아 띠가 보이지 않고 `/wdis` 조회만 동작할 것으로 예상한다 (실측하지 않은 추정).
-  - v2.1.292에서 `claude plugin validate`·`claude plugin test`로 확인했다.
+- **띠 박스(자동 표시)는 Claude Code v2.1.286 이상**에서 동작한다 (mods = 함수 훅 플러그인, `hooks/hooks.json`의 `modules` 항목으로 로드).
+  - **그보다 낮은 버전에서는 자동 표시가 없고 `/wdis` 조회만 동작한다.** `modules` 키는 오류 없이 무시되고 `/wdis` 훅은 그대로 로드된다.
+  - v2.1.242~v2.1.285는 mods 기능이 서버 롤아웃 플래그 뒤에 있어 환경에 따라 띠가 보일 수도 있다 (플래그가 켜진 환경은 실측하지 못한 추정).
+  - 근거: 2026-10-07 격리 설정(`CLAUDE_CONFIG_DIR`)으로 v2.1.200·v2.1.241·v2.1.242~v2.1.286 실측, v2.1.292에서 `claude plugin validate`·`claude plugin test` 확인.
 
 ## 알려진 한계
 
