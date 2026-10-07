@@ -29,7 +29,7 @@ export function normalizeText(raw) {
     text = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '');
   }
 
-  // ANSI escape 등 제어문자가 systemMessage로 살아나가 터미널을 오염시키지 않게 지운다
+  // ANSI escape 등 제어문자가 /wdis 출력으로 살아나가 터미널을 오염시키지 않게 지운다
   text = text.replace(/[\x00-\x1f\x7f]/g, ' ');
   text = text.replace(/\s+/g, ' ').trim();
 

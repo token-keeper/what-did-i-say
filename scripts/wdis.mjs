@@ -1,4 +1,5 @@
-// 진입점 — Stop hook 모드(인자 없음) / --expand 모드 / --list 모드 분기, 시간 포맷, 세션 파일 탐색 (TECH_SPEC §2·§5·§7)
+// 진입점 — --expand 모드 / --list 모드 분기, 시간 포맷, 세션 파일 탐색 (TECH_SPEC §2·§5·§7)
+// 턴 끝 자동 표시(구 Stop hook 모드)는 hooks/register.tsx 의 프롬프트 위 띠가 대신한다.
 // jsonl 스캔·필터는 parser.mjs 담당이다.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -141,14 +142,6 @@ export function runExpand(stdin, { now = new Date(), env = process.env, home } =
   }
 }
 
-/** hook 모드 출력(없으면 빈 문자열). 예외는 삼키지 않고 호출자에게 올린다. */
-export function runHook(stdin, now = new Date()) {
-  const { transcript_path: transcriptPath } = JSON.parse(stdin);
-  const [recent] = collectRecent(transcriptPath, 1);
-  if (!recent) return '';
-  return JSON.stringify({ systemMessage: `🗣 ${formatLine(recent, now)}` }) + '\n';
-}
-
 function main(argv) {
   if (argv.includes('--expand')) {
     try {
@@ -157,16 +150,6 @@ function main(argv) {
       if (reason !== null) process.stdout.write(JSON.stringify({ decision: 'block', reason }) + '\n');
     } catch {
       /* 라우팅 이전 실패(stdin 손상 등) — 남의 커맨드일 수 있으므로 무출력 */
-    }
-    return;
-  }
-  if (!argv.includes('--list')) {
-    // §7 — 예외를 삼키는 지점은 여기 한 곳뿐이다. 무엇이 실패하든 무출력 exit 0.
-    try {
-      // hook 실행 시 stdin은 항상 파이프된다. stdin 없이 단독 실행하면 여기서 블록될 수 있다.
-      process.stdout.write(runHook(fs.readFileSync(0, 'utf8')));
-    } catch {
-      /* 턴 완료를 방해하지 않는다 */
     }
     return;
   }

@@ -1,5 +1,7 @@
 # what-did-i-say — PLAN
 
+> **0.3.0 변경**: 턴 끝 Stop 훅의 한 줄 출력(`systemMessage`)은 프롬프트 위 띠 박스(mod, `hooks/register.tsx`)로 대체됐다. 아래 Stop 훅 관련 내용은 0.2.x 기준 기록이다.
+
 > 작성 2026-08-09 · 선행 문서: [PRD.md](./PRD.md)(무엇을 만드는가) · [TECH_SPEC.md](./TECH_SPEC.md)(어떻게 구현하는가)
 > 이 문서는 **언제·어떤 순서로** 진행할지만 다룬다.
 

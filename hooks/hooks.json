@@ -10,17 +10,9 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/wdis.mjs\"",
-            "timeout": 5
-          }
-        ]
-      }
     ]
-  }
+  },
+  "modules": [
+    "./register.tsx"
+  ]
 }

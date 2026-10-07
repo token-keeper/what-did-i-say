@@ -1,5 +1,7 @@
 # what-did-i-say — TECH_SPEC
 
+> **0.3.0 변경**: 턴 끝 Stop 훅의 한 줄 출력(`systemMessage`)은 프롬프트 위 띠 박스(mod, `hooks/register.tsx`)로 대체됐다. 아래 Stop 훅 관련 내용은 0.2.x 기준 기록이다.
+
 > 작성 2026-08-09 · 대상 MVP: Claude Code 전용 · 선행 문서: `HANDOFF.md`, `docs/PRD.md`
 
 ## 1. 개요·범위

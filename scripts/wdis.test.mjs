@@ -215,29 +215,3 @@ test('--expand의 N은 command_args 우선, 없으면 prompt에서 읽고 상한
   );
   assert.match(reason, /10건으로 보정/);
 });
-
-// TECH_SPEC §8 케이스 16
-test('hook 모드 stdout은 개행 없는 systemMessage JSON 하나다', () => {
-  const got = run([], JSON.stringify({ transcript_path: fixture('basic.jsonl') }));
-  assert.equal(got.status, 0);
-  const payload = JSON.parse(got.stdout);
-  assert.ok(payload.systemMessage.startsWith('🗣 '));
-  assert.ok(!/[\n\r]/.test(payload.systemMessage), 'systemMessage에 개행이 있다');
-  assert.ok(payload.systemMessage.endsWith('| 테스트 케이스 추가해줘'), payload.systemMessage);
-  assert.equal(got.stderr, '');
-});
-
-test('hook 모드는 어떤 실패에도 무출력 exit 0으로 끝난다', () => {
-  for (const [label, input] of [
-    ['존재하지 않는 transcript_path', JSON.stringify({ transcript_path: '/nonexistent' })],
-    ['transcript_path 누락', '{}'],
-    ['손상된 stdin', '{not json'],
-    ['빈 stdin', ''],
-    ['채택할 요청이 없는 파일', JSON.stringify({ transcript_path: fixture('empty.jsonl') })],
-  ]) {
-    const got = run([], input);
-    assert.equal(got.status, 0, `${label}: exit 0이어야 한다`);
-    assert.equal(got.stdout, '', `${label}: 출력이 없어야 한다`);
-    assert.equal(got.stderr, '', `${label}: stderr에 쓰지 않는다`);
-  }
-});
