@@ -11,5 +11,6 @@
     "hooks",
     "prompt-history",
     "productivity"
-  ]
+  ],
+  "types": "./types/index.d.ts"
 }
