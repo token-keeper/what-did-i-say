@@ -37,6 +37,16 @@ export const register: Register = on => {
     return r
   })
 
+  // /compact(또는 플러그인 compact)로 대화가 정리되면 띠도 비운다. 메인 대화만(agentId 없음), 거부된(skip) compact 는 그대로
+  // auto(답변 도중 자동 compact — 진행 중 요청이 지워짐)·precompute(아무것도 설치 안 함)는 제외
+  on('session.compact', async ($, e, next) => {
+    const r = await next(e)
+    if (r.skip === undefined && e.agentId === undefined && (e.trigger === 'manual' || e.trigger === 'plugin')) {
+      await update($, last, () => null)
+    }
+    return r
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.surface !== 'terminal' && e.surface !== 'desktop') return next(e)
     if (e.props.isWorking || e.props.hasSurvey) return next(e)
