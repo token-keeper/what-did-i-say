@@ -47,7 +47,12 @@ claude --plugin-dir /절대/경로/what-did-i-say
 
 ### 마켓플레이스
 
-token-keeper `plugins` 마켓플레이스 등록 후 제공 예정.
+```bash
+/plugin marketplace add token-keeper/plugins
+/plugin install what-did-i-say@token-keeper
+```
+
+설치 후 **새 chat 세션** 부터 적용 (Claude Code settings hot-reload 안 함).
 
 ## 사용법
 

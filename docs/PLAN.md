@@ -14,6 +14,8 @@
 | #4 | 0.3.0 | Stop 훅 한 줄 출력 제거 → 프롬프트 위 띠 박스(mod) |
 | #5 | 0.3.1 | `/compact`(manual·plugin) 직후 띠 비우기 |
 
+token-keeper `plugins` 마켓플레이스에 등록됨 — 설치 키 `what-did-i-say@token-keeper`.
+
 0.1.0~0.2.0의 커밋 단위 계획(Stop 훅 기준 5커밋·실측 체크리스트)은 git 이력의 이 파일에 남아 있다.
 
 ## 2. 남은 일
@@ -21,7 +23,6 @@
 | 항목 | 상태 |
 |---|---|
 | 띠를 입력창 아래로 옮기는 안 | 대표 보류 중 |
-| token-keeper `plugins` 마켓플레이스 submodule 등록 | 미착수 — 원격 등록은 대표 승인 후 (README "제공 예정") |
 | Codex 지원 | 범위 외 (TECH_SPEC §10) |
 
 ## 3. 검증 명령
