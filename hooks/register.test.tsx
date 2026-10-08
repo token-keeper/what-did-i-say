@@ -1,44 +1,48 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import type { On, PromptOrigin, SessionCompactInput, SessionMessage } from 'claude-code'
+import type { AgentInfo, AgentStatus, On, PromptOrigin, SessionCompactInput, SessionMessage } from 'claude-code'
 
 const PLUGIN = 'what-did-i-say'
 const SURFACES = ['terminal', 'desktop'] as const
 // 2026-10-06T15:12:00Z = KST 2026-10-07 (수) 00:12 — UTC로 포맷하면 날짜·요일이 틀린다
 const AT = Date.UTC(2026, 9, 6, 15, 12)
 
-const band = (over: { isWorking?: boolean; hasSurvey?: boolean } = {}) => ({
-  hasSurvey: false,
-  isWorking: false,
-  maxRows: 20,
-  bodyColumns: 80,
-  scroll: { offset: 0, bodyRows: 19 },
-  view: {},
-  ...over,
-})
+// columns: 터미널 폭(e.viewport.columns), null 이면 viewport 없이 그린다
+type BandOver = { isWorking?: boolean; isDraft?: boolean; columns?: number | null }
 
-// 엔진 자리: 'BLOCK'으로 시작하는 프롬프트는 막고(drop), 띠는 'engine' 텍스트를 그린다
-function setup(on: On) {
+// 엔진 자리: 'BLOCK'으로 시작하는 프롬프트는 막고(drop), 힌트 줄은 'engine' 텍스트를 그리고, 에이전트 목록은 돌려준 배열을 따른다
+function setup(on: On): { agents: AgentInfo[] } {
+  const w = { agents: [] as AgentInfo[] }
   mock.clock(on, { now: AT })
+  on('agent.list', () => ({ value: w.agents }))
   on('prompt.submit', (_$, e) => (e.text.startsWith('BLOCK') ? { drop: 'blocked' } : { text: e.text }))
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+  on('ui.render', { component: 'PromptHint' }, ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text>engine</Text>
   })
+  return w
 }
 
 const submit = ($: Engine, text: string, origin: PromptOrigin = { kind: 'composer' }) =>
   $.prompt.submit({ text, wait: false, origin })
 
-const mount = ($: Engine, surface: (typeof SURFACES)[number], over: { isWorking?: boolean; hasSurvey?: boolean } = {}) =>
-  $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: band(over) })
+const mount = ($: Engine, surface: (typeof SURFACES)[number], over: BandOver = {}) => {
+  const { columns = 80, isWorking = false, isDraft = false } = over
+  return $.ui.mount({
+    plugin: PLUGIN,
+    surface,
+    component: 'PromptHint',
+    props: { isDraft, isWorking, hint: '? for shortcuts' },
+    ...(columns === null ? {} : { viewport: { columns, rows: 24 } }),
+  })
+}
 
 type Drawing = Awaited<ReturnType<typeof mount>>
 
 // 패널은 Box로만 그려지고, 엔진 자리(setup)는 Text 하나라서 Box 유무로 패널 여부를 가린다
 const hasPanel = async (ui: Drawing) => (await ui.find({ type: 'Box' })) !== undefined
-// Text 순서: [0] 아래(엔진 자리) · [1] 날짜 · [2] 요청
-const body = async (ui: Drawing) => (await ui.findAll({ type: 'Text' }))[2]?.text
+// Text 순서: [0] 날짜 · [1] 요청 · [2] 아래(엔진 자리)
+const body = async (ui: Drawing) => (await ui.findAll({ type: 'Text' }))[1]?.text
 
 test('대기 상태면 단색 띠에 KST 날짜·한글 요일과 요청을 그린다', async ($, on) => {
   setup(on)
@@ -46,7 +50,7 @@ test('대기 상태면 단색 띠에 KST 날짜·한글 요일과 요청을 그�
   for (const surface of SURFACES) {
     const ui = await mount($, surface)
     const texts = await ui.findAll({ type: 'Text' })
-    const [, date, req] = texts
+    const [date, req] = texts
     const boxes = await ui.findAll({ type: 'Box' })
     expect(texts).toHaveLength(3)
     expect(boxes).toHaveLength(2)
@@ -60,7 +64,7 @@ test('대기 상태면 단색 띠에 KST 날짜·한글 요일과 요청을 그�
   }
 })
 
-test('아래(엔진·다른 플러그인)가 그린 트리는 패널 위에 둔다', async ($, on) => {
+test('아래(엔진 힌트 줄·다른 플러그인)가 그린 트리는 패널 밑에 둔다', async ($, on) => {
   setup(on)
   await submit($, '서버 배포해줘')
   for (const surface of SURFACES) {
@@ -68,18 +72,18 @@ test('아래(엔진·다른 플러그인)가 그린 트리는 패널 위에 둔�
     expect(await ui.drawn()).toMatchObject({
       type: 'Box',
       props: { flexDirection: 'column' },
-      children: [{ type: 'Text', children: ['engine'] }, { type: 'Box', props: { marginX: 1, backgroundColor: '#2b2b2b' } }],
+      children: [{ type: 'Box', props: { marginX: 1, backgroundColor: '#2b2b2b' } }, { type: 'Text', children: ['engine'] }],
     })
     await ui.unmount()
   }
 })
 
-test('패널 폭+여백은 띠 폭을 넘지 않는다 (좁은 폭 포함)', async ($, on) => {
+test('패널 width 값은 터미널 폭 - 2 다 (좁은 폭 포함, 최소 1)', async ($, on) => {
   setup(on)
   await submit($, '서버 배포해줘')
   for (const surface of SURFACES) {
     for (const [cols, expected] of [[80, 78], [15, 13], [3, 1]] as const) {
-      const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: { ...band(), bodyColumns: cols } })
+      const ui = await mount($, surface, { columns: cols })
       const width = (await ui.findAll({ type: 'Box' }))[1]?.props['width']
       expect(width).toBe(expected)
       expect(expected + 2 <= cols).toBe(true)
@@ -99,13 +103,93 @@ test('답변 중이면 엔진 기본(next)으로 넘긴다', async ($, on) => {
   }
 })
 
-test('설문이 띠를 잡고 있으면 엔진 기본(next)으로 양보한다', async ($, on) => {
+test('폭을 모르면(viewport 없음) 엔진 기본(next)으로 넘긴다', async ($, on) => {
   setup(on)
   await submit($, '서버 배포해줘')
   for (const surface of SURFACES) {
-    const ui = await mount($, surface, { hasSurvey: true })
+    const ui = await mount($, surface, { columns: null })
     expect(await hasPanel(ui)).toBe(false)
-    expect(await ui.find({ type: 'Text', text: '서버 배포해줘' })).toBeUndefined()
+    expect(await ui.drawn()).toMatchObject({ type: 'Text', children: ['engine'] })
+    await ui.unmount()
+  }
+})
+
+test('글자 치는 중(isDraft)에도 띠는 그대로 보인다', async ($, on) => {
+  setup(on)
+  await submit($, '서버 배포해줘')
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface, { isDraft: true })
+    expect(await body(ui)).toBe('서버 배포해줘')
+    await ui.unmount()
+  }
+})
+
+// ── 백그라운드 에이전트가 도는 동안은 숨김 ──
+const agent = (status: AgentStatus): AgentInfo => ({ id: `a-${status}`, description: 'lane', type: 'general-purpose', status })
+
+// 엔진 자리: 서브에이전트 요청은 빈 응답, 턴 끝은 답을 그대로 돌려준다
+function agentEngine(on: On) {
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: null }
+  })
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
+}
+
+async function agentStep($: Engine) {
+  for await (const _ of $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1, agentId: 'agent-1' })) {
+    // 청크 없음
+  }
+}
+
+const agentDone = ($: Engine) =>
+  $.turn.complete({ answer: 'done', durationMs: 1, isAborted: false, turnId: 't', agentId: 'agent-1', reason: 'answer' })
+
+for (const status of ['pending', 'running', 'waiting'] as const) {
+  test(`백그라운드 에이전트가 ${status} 이면 띠를 숨긴다`, async ($, on) => {
+    const w = setup(on)
+    w.agents = [agent('idle'), agent(status)]
+    await submit($, '서버 배포해줘')
+    for (const surface of SURFACES) {
+      const ui = await mount($, surface)
+      expect(await hasPanel(ui)).toBe(false)
+      expect(await ui.drawn()).toMatchObject({ type: 'Text', children: ['engine'] })
+      await ui.unmount()
+    }
+  })
+}
+
+test('대기 중 서브에이전트가 돌기 시작하면 숨고, 끝나면 다시 보인다', async ($, on) => {
+  const w = setup(on)
+  agentEngine(on)
+  await submit($, '서버 배포해줘')
+  for (const surface of SURFACES) {
+    w.agents = [agent('idle'), agent('completed'), agent('failed'), agent('killed')]
+    const ui = await mount($, surface)
+    expect(await body(ui)).toBe('서버 배포해줘')
+    w.agents = [agent('running')]
+    await agentStep($)
+    expect(await hasPanel(ui)).toBe(false)
+    w.agents = [agent('completed')]
+    await agentDone($)
+    expect(await body(ui)).toBe('서버 배포해줘')
+    await ui.unmount()
+  }
+})
+
+test('에이전트 목록을 못 읽으면 띠를 그대로 보인다', async ($, on) => {
+  mock.clock(on, { now: AT })
+  on('agent.list', () => {
+    throw new Error('boom')
+  })
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  on('ui.render', { component: 'PromptHint' }, ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  await submit($, '서버 배포해줘')
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    expect(await body(ui)).toBe('서버 배포해줘')
     await ui.unmount()
   }
 })

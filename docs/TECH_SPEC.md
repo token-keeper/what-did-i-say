@@ -1,15 +1,15 @@
 # what-did-i-say — TECH_SPEC
 
-> 기준 0.3.1 · 최초 작성 2026-08-09, 띠 박스(mod) 구조로 재작성 2026-10-08 · 대상: Claude Code 전용
+> 기준 0.3.2 · 최초 작성 2026-08-09, 띠 박스(mod) 구조로 재작성 2026-10-08 · 대상: Claude Code 전용
 
 ## 1. 개요·범위
 
-답변이 끝나 입력을 기다리는 동안 **프롬프트 바로 위 띠**에 "방금 무엇을 요청했는지 + 언제 요청했는지"를 박스로 보여주고,
+답변이 끝나 입력을 기다리는 동안 **입력창 바로 아래 띠**(힌트 줄 자리)에 "방금 무엇을 요청했는지 + 언제 요청했는지"를 박스로 보여주고,
 `/what-did-i-say:wdis N`(단축 `/wdis N`)으로 현재 세션의 최근 N건을 조회하는 Claude Code 플러그인.
 
 | 구분 | 내용 |
 |---|---|
-| 범위 | 프롬프트 위 띠 박스(mod) · `/wdis N` 조회 · 현재 세션 한정 |
+| 범위 | 입력창 아래 띠 박스(mod) · `/wdis N` 조회 · 현재 세션 한정 |
 | 비범위 | Codex 지원(§10) · 세션 간 통합 조회 · 인덱스/DB · 웹 UI · 설정 파일 |
 | 런타임 | 띠: Claude Code mods(함수 훅 모듈, TSX) / 조회: Node.js **18.17+** (ESM `.mjs`), 외부 의존성 제로 |
 | 상태 | 띠는 마지막 요청 1건만 mod 상태(atom)에 보관한다(파일 아님). 조회는 무상태 — 원천 jsonl을 매번 읽는다 |
@@ -20,7 +20,7 @@
 ```
 .claude-plugin/plugin.json   # 매니페스트 (메타데이터 + mod 상태 계약 경로 "types")
 hooks/hooks.json             # UserPromptExpansion 훅(/wdis) + "modules"(띠 mod) 등록
-hooks/register.tsx           # 띠 mod — 요청 기록·compact 시 비움·AbovePrompt 렌더
+hooks/register.tsx           # 띠 mod — 요청 기록·compact 시 비움·PromptHint 렌더
 hooks/register.test.tsx      # claude plugin test
 types/index.d.ts             # mod 상태 계약 (PluginState['what-did-i-say'].last)
 commands/wdis.md             # /wdis 슬래시 커맨드 (UserPromptExpansion 미지원 버전용 폴백)
@@ -47,15 +47,16 @@ scripts/fixtures/*.jsonl     # 실제 라인을 축소한 픽스처
 |---|---|
 | `prompt.submit` | `e.origin.kind`가 `composer`·`bridge`·`sdk`(사람이 직접 입력)이고 공백이 아닌 요청만 대상. 시각(`$.clock.now()`)을 먼저 잡고 `next(e)`를 부른 뒤, 아래 체인이 막지 않았으면(`r.drop === undefined`) `{ text: clip(e.text), at }`로 덮어쓴다. 프롬프트 내용은 바꾸지 않는다 |
 | `session.compact` | `next(e)` 결과가 거부(`r.skip`)가 아니고, 메인 대화(`e.agentId` 없음)이며, `trigger`가 `manual`(`/compact`) 또는 `plugin`일 때만 상태를 `null`로 비운다. `auto`(답변 도중 자동 compact — 진행 중 요청이 지워진다)·`precompute`(아무것도 설치하지 않음)·서브에이전트 compact·거부된 compact는 그대로 둔다 |
-| `ui.render` (`component: 'AbovePrompt'`) | 아래 조건에서만 그리고, 그 밖에는 `next(e)`로 넘긴다 |
+| `turn.step`·`turn.complete` | 서브에이전트 것(`e.agentId` 있음)이면 `$.ui.invalidate('ui.render')`로 띠를 다시 그려 에이전트 목록을 새로 읽게 한다 (`agent.list`는 그리기 구독 대상이 아니라서) |
+| `ui.render` (`component: 'PromptHint'`) | 아래 조건에서만 그리고, 그 밖에는 `next(e)`로 넘긴다 |
 
-**렌더 조건** — `surface`가 `terminal` 또는 `desktop`이고, `props.isWorking`(답변 중)·`props.hasSurvey`(설문이 띠 사용 중)가 모두 거짓이며, 상태가 `null`이 아닐 때.
+**렌더 조건** — `surface`가 `terminal` 또는 `desktop`이고, `props.isWorking`(답변 중)이 거짓이고, `e.viewport.columns`(폭)가 있고, 상태가 `null`이 아니고, `$.agent.list()`에 `pending`·`running`·`waiting` 에이전트가 없을 때(목록을 못 읽으면 없는 것으로 본다). `props.isDraft`(글자 치는 중)에는 숨기지 않는다.
 
-**렌더 구조** — `next(e)`가 그린 트리(엔진·다른 플러그인 띠)를 위에 두고 그 아래에 박스를 붙인다.
+**렌더 구조** — 박스를 위에 두고 `next(e)`가 그린 트리(다른 플러그인 띠·엔진 힌트 줄)를 그 아래에 둔다. 입력창 위(AbovePrompt)에 두면 `/` 명령 목록이 띠 위로 밀려 뜬다.
 
 | 항목 | 값 |
 |---|---|
-| 박스 | `backgroundColor #2b2b2b` · `marginX 1` · `paddingX 2` · `width = max(1, bodyColumns - 2)` — cache-necromancer 띠와 같은 규격이라 위아래로 붙으면 한 사각형이 된다 |
+| 박스 | `backgroundColor #2b2b2b` · `marginX 1` · `paddingX 2` · `width = max(1, viewport.columns - 2)` — cache-necromancer 띠와 같은 규격이라 위아래로 붙으면 한 사각형이 된다 |
 | 1줄 | 요청 시각, 색 `#9a9a9a`, **KST 고정** `YYYY-MM-DD (요일) HH:MM` (요일 한글) |
 | 2줄~ | 요청 원문, 색 `#e6e6e6` |
 
@@ -220,8 +221,8 @@ export function normalizeText(raw)          // → string (공백 collapse + tri
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "what-did-i-say",
-  "version": "0.3.1",
-  "description": "답변이 끝나면 프롬프트 위 띠에 방금 요청한 내용과 시각을 박스로 보여주고, /wdis 로 최근 요청을 조회",
+  "version": "0.3.2",
+  "description": "답변이 끝나면 입력창 아래 띠에 방금 요청한 내용과 시각을 박스로 보여주고, /wdis 로 최근 요청을 조회",
   "author": { "name": "brody424" },
   "license": "MIT",
   "keywords": ["hooks", "prompt-history", "productivity"],
@@ -285,7 +286,7 @@ allowed-tools: Bash(node:*)
 
 | 경로 | 상황 | 처리 |
 |---|---|---|
-| 띠 mod | 저장된 요청 없음·답변 중·설문 중·지원 외 surface | `next(e)`로 엔진 기본에 넘긴다(아무것도 그리지 않음) |
+| 띠 mod | 저장된 요청 없음·답변 중·에이전트 실행 중·폭 모름·지원 외 surface | `next(e)`로 엔진 기본에 넘긴다(아무것도 그리지 않음) |
 | `--expand` | 우리 커맨드가 아님 · 라우팅 이전 실패(stdin 손상 등) | 무출력 exit 0 |
 | `--expand` | 라우팅 확정 후 조회 실패 | 안내 문구를 `reason`에 담아 block |
 | `--list` | 세션 파일 없음·채택 0건·예외 | 사람이 읽을 안내 한 줄, exit 0. stdout이 죽었어도(EPIPE) exit 0 |
@@ -297,7 +298,7 @@ allowed-tools: Bash(node:*)
 | 대상 | 명령 | 범위 |
 |---|---|---|
 | `/wdis` 스크립트 | `node --test` | 파서·필터·정규화·시간 포맷·N 보정·세션 탐색·`--expand` 라우팅 |
-| 띠 mod | `claude plugin test .` | 렌더 조건·박스 규격·자르기·origin 필터·drop·compact 비움/유지 (terminal·desktop) |
+| 띠 mod | `claude plugin test .` | 렌더 조건·박스 규격·자르기·origin 필터·drop·compact 비움/유지·에이전트 숨김 (terminal·desktop) |
 | 매니페스트 | `claude plugin validate .` | plugin.json·hooks.json·mod 모듈 |
 
 통과 수는 README "개발" 절이 기록한다. 픽스처는 실제 jsonl 라인을 축소한 `scripts/fixtures/*.jsonl`을 쓴다.
@@ -331,7 +332,7 @@ allowed-tools: Bash(node:*)
 1. **같은 프로젝트 병렬 세션 — mtime fallback 경로에서만 해당.** 세션 ID를 얻으면 정확히 지정되지만, §2.3-3으로 내려간 경우 동일 cwd의 다른 세션 요청을 표시할 수 있다. 띠 mod는 세션 안의 이벤트만 쓰므로 해당하지 않는다.
 2. **jsonl 스키마 의존(`/wdis`)** — Claude Code 내부 포맷이므로 상위 버전에서 필드명이 바뀔 수 있다.
 3. **띠는 로드 이후 요청만** — 띠 상태는 세션 메모리의 atom이라, 이 세션에서 플러그인이 로드되기 전 요청은 보여주지 않는다. 이전 요청은 `/wdis`로 조회한다.
-4. **띠 공유** — 프롬프트 위 띠를 쓰는 다른 플러그인이 있으면 함께 쌓이며, 이 플러그인은 항상 그 아래에 둔다.
+4. **띠 공유** — 입력창 아래 띠를 쓰는 다른 플러그인이 있으면 함께 쌓이며, 이 플러그인은 항상 그 위에 둔다(엔진 힌트 줄은 맨 아래).
 5. **두 경로의 표기 차이** — 띠는 KST 고정·원문 5줄, `/wdis`는 로컬 타임존·한 줄 80자다(§5).
 6. **스캔 상한(`/wdis`)** — `N` 상한 **10**, 총 스캔 바이트 상한 **10MiB**. 도달하면 그때까지 수집한 분량만 반환해 세션 초반 요청까지 거슬러 올라가지 못할 수 있다.
 
@@ -350,3 +351,5 @@ allowed-tools: Bash(node:*)
   0.2.0에서 `/wdis`를 `UserPromptExpansion` 훅으로 턴 0 처리하게 바꿨다.
 - **0.3.0 (2026-10-07)** — Stop 훅과 hook 모드를 삭제하고 프롬프트 위 띠 박스(mod)로 대체했다. `/wdis` 경로는 그대로.
 - **0.3.1 (2026-10-07)** — `/compact`(manual·plugin) 직후 띠를 비운다.
+- **0.3.2 (2026-10-08)** — 띠를 입력창 위(AbovePrompt)에서 아래 힌트 줄 자리(PromptHint)로 옮겼다(`/` 명령 목록이 띠 위로 밀리던 문제). 백그라운드 에이전트가 도는 동안 숨기고, 설문 판정은 뺐다(설문은 입력창 위라 겹치지 않음).
+  입력창 아래로 옮기면서 띠 접기(`[-]`·ctrl+x ctrl+a)와 긴 띠 스크롤은 없어졌다 (PromptHint 자리엔 그 기능이 없음).

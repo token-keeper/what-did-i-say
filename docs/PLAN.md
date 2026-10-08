@@ -1,6 +1,6 @@
 # what-did-i-say — PLAN
 
-> 상태: 완료 (0.3.1)
+> 상태: 완료 (0.3.2)
 
 > 작성 2026-08-09 · 갱신 2026-10-08 · 선행 문서: [PRD.md](./PRD.md)(무엇을 만드는가) · [TECH_SPEC.md](./TECH_SPEC.md)(어떻게 구현하는가)
 
@@ -13,6 +13,7 @@
 | #3 | 0.2.0 | `/wdis` 턴 0 처리(`UserPromptExpansion` 훅), N 상한 10 |
 | #4 | 0.3.0 | Stop 훅 한 줄 출력 제거 → 프롬프트 위 띠 박스(mod) |
 | #5 | 0.3.1 | `/compact`(manual·plugin) 직후 띠 비우기 |
+| — | 0.3.2 | 띠를 입력창 아래(힌트 줄 자리)로 이동, 백그라운드 에이전트 실행 중 숨김 |
 
 token-keeper `plugins` 마켓플레이스에 등록됨 — 설치 키 `what-did-i-say@token-keeper`.
 
@@ -22,7 +23,6 @@ token-keeper `plugins` 마켓플레이스에 등록됨 — 설치 키 `what-did-
 
 | 항목 | 상태 |
 |---|---|
-| 띠를 입력창 아래로 옮기는 안 | 대표 보류 중 |
 | Codex 지원 | 범위 외 (TECH_SPEC §10) |
 
 ## 3. 검증 명령
