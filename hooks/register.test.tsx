@@ -78,7 +78,7 @@ test('아래(엔진 힌트 줄·다른 플러그인)가 그린 트리는 패널 
   }
 })
 
-test('패널 폭은 터미널 폭 - 2 이고 여백 포함 폭을 넘지 않는다 (좁은 폭 포함)', async ($, on) => {
+test('패널 width 값은 터미널 폭 - 2 다 (좁은 폭 포함, 최소 1)', async ($, on) => {
   setup(on)
   await submit($, '서버 배포해줘')
   for (const surface of SURFACES) {

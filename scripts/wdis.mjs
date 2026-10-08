@@ -1,5 +1,5 @@
 // 진입점 — --expand 모드 / --list 모드 분기, 시간 포맷, 세션 파일 탐색 (TECH_SPEC §2·§5·§7)
-// 턴 끝 자동 표시(구 Stop hook 모드)는 hooks/register.tsx 의 프롬프트 위 띠가 대신한다.
+// 턴 끝 자동 표시(구 Stop hook 모드)는 hooks/register.tsx 의 입력창 아래 띠가 대신한다.
 // jsonl 스캔·필터는 parser.mjs 담당이다.
 import fs from 'node:fs';
 import os from 'node:os';
